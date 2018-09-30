@@ -48,14 +48,12 @@ failed="F"
 
 if !(grep -q "CLIENT MESSAGE $message" "E.out") ; then
 	failed="T"
+	echo -e "${RED}***FAILED: no Client message on E ***${NC}"
 fi
 
 if !(grep -q "CLIENT MESSAGE $message2" "B.out") ; then
-  failed="T"
-fi
-
-if [[ "$failed" == "T" ]] ; then
-	echo -e "${RED}FAILED${NC}"
+  	failed="T"
+  	echo -e "${RED}***FAILED: no Client message on B ***${NC}"
 fi
 
 # echo "${outputFiles[@]}"
@@ -71,20 +69,28 @@ do
 	msgLine="SIMPLE MESSAGE origin E from 127.0.0.1:$relayPort contents $message"
 	msgLine2="SIMPLE MESSAGE origin B from 127.0.0.1:$relayPort contents $message2"
 	peersLine="127.0.0.1:$nextPort,127.0.0.1:$relayPort"
+
+	gossipPort=$(($gossipPort+1))
 	if [[ "$DEBUG" == "true" ]] ; then
 		echo "check 1 $msgLine"
-		echo "check 2 $msgLine2"
-		echo "check 3 $peersLine"
 	fi
-	gossipPort=$(($gossipPort+1))
 	if !(grep -q "$msgLine" "${outputFiles[$i]}") ; then
    		failed="T"
+   		echo -e "${RED}***FAILED***${NC}"
+	fi
+	if [[ "$DEBUG" == "true" ]] ; then
+		echo "check 3 $peersLine"
 	fi
 	if !(grep -q "$peersLine" "${outputFiles[$i]}") ; then
         failed="T"
+        echo -e "${RED}***FAILED***${NC}"
     fi
+    if [[ "$DEBUG" == "true" ]] ; then
+		echo "check 2 $msgLine2"
+	fi
 	if !(grep -q "$msgLine2" "${outputFiles[$i]}") ; then
         failed="T"
+        echo -e "${RED}***FAILED***${NC}"
     fi
 done
 
