@@ -60,7 +60,7 @@ func (g *Gossiper) clientListenRoutine() {
 		g.printKnownPeers()
 		i.OriginalName = g.name
 		i.RelayPeerAddr = g.address
-		g.sendAllPeers(i)
+		g.sendAllPeers(i, "")
 	}
 }
 
@@ -84,6 +84,9 @@ func (g *Gossiper) externalListenRoutine() {
 		printGossiperMessage(i)
 		g.addToPeers(i.RelayPeerAddr)
 		g.printKnownPeers()
+		relayer := i.RelayPeerAddr
+		i.RelayPeerAddr = g.address
+		g.sendAllPeers(i, relayer)
 	}
 }
 
@@ -110,9 +113,11 @@ func (g *Gossiper) addToPeers(peerAddr string) {
 }
 
 //SENDING
-func (g *Gossiper) sendAllPeers(msg dto.SimpleMessage) {
+func (g *Gossiper) sendAllPeers(msg dto.SimpleMessage, exception string) {
 	for _, v := range g.peers {
-		g.sendUDP(msg, v)
+		if v != exception {
+			g.sendUDP(msg, v)
+		}
 	}
 }
 
