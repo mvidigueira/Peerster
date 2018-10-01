@@ -96,6 +96,23 @@ func (g *GossipPacket) GetOrigin() (origin string) {
 	return
 }
 
+func (g *GossipPacket) GetSeqID() (id uint32) {
+	switch subtype := g.GetUnderlyingType(); subtype {
+	case "simple":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract ID from a SIMPLE message"}
+		LogError(err)
+	case "rumor":
+		id = g.Rumor.ID
+	case "status":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract ID from a STATUS message"}
+		LogError(err)
+	default:
+		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
+		LogError(err)
+	}
+	return
+}
+
 func (g *GossipPacket) GetUnderlyingType() (subtype string) {
 	if g.Simple != nil {
 		subtype = "simple"
@@ -139,7 +156,7 @@ func ToStatusPacket(wm *WantsMap) StatusPacket {
 	statusList := make([]PeerStatus, len(*wm))
 	i := 0
 	for k, v := range *wm {
-		statusList[i] = PeerStatus{Identifier: k, NextID: uint32(len(v))}
+		statusList[i] = PeerStatus{Identifier: k, NextID: uint32(len(v) + 1)}
 		i++
 	}
 	return StatusPacket{Want: statusList}
@@ -151,7 +168,7 @@ func Print(wm WantsMap) {
 	for key, value := range wm {
 		fmt.Printf("Identifier: %s\n", key)
 		for i, msg := range value {
-			fmt.Printf("Number: %d, Message ID: %d, Message: %v\n", i, msg.ID, msg.Text)
+			fmt.Printf("Message ID: %d, Message: %v\n", i, msg.ID, msg.Text)
 		}
 	}
 }

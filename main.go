@@ -20,7 +20,5 @@ func main() {
 	}
 	gossiper := NewGossiper(*gossipAddr, *name, *UIPort, peers, *simple)
 
-	gossiper.listenRoutine()
-
-	*simple = false //this is just so it compiles, dont forget to use simple flag later on
+	gossiper.start()
 }

@@ -12,17 +12,17 @@ import (
 )
 
 const packetSize = 1024
-const debug = true
+const debug = false
 
 type SafeCounter struct {
 	v   uint32
 	mux sync.Mutex
 }
 
-func (sc *SafeCounter) GetAndIncrement() (old uint32) {
+func (sc *SafeCounter) IncrementAndGet() (v uint32) {
 	sc.mux.Lock()
-	old = sc.v
 	sc.v++
+	v = sc.v
 	sc.mux.Unlock()
 	return
 }
@@ -60,52 +60,28 @@ func NewGossiper(address, name string, UIport int, peers []string, simple bool) 
 	}
 }
 
-//PRINTING
-func (g Gossiper) printKnownPeers() {
-	fmt.Println("PEERS " + strings.Join(g.peers, ","))
-}
-
-func printClientMessage(pair *dto.PacketAddressPair) {
-	fmt.Printf("CLIENT MESSAGE %v\n", pair.GetContents())
-}
-
-func printGossiperMessage(pair *dto.PacketAddressPair) {
-	switch subtype := pair.Packet.GetUnderlyingType(); subtype {
-	case "simple":
-		fmt.Printf("SIMPLE MESSAGE origin %v from %v contents %v\n",
-			pair.GetOrigin(), pair.GetSenderAddress(), pair.GetContents())
-	case "rumor":
-		fmt.Printf("RUMOR origin %v from %v ID %v contents %v\n",
-			pair.GetOrigin(), pair.GetSenderAddress(), pair.Packet.Rumor.ID, pair.GetContents())
-	}
-}
-
-//RECEIVING
-
-func (g *Gossiper) listenRoutine() {
+//Start
+func (g *Gossiper) start() {
 	cUI := make(chan *dto.PacketAddressPair)
-	cEXT := make(chan *dto.PacketAddressPair)
 	go g.receiveClientUDP(cUI)
-	go g.receiveExternalUDP(cEXT)
+	go g.clientListenRoutine(cUI)
 
-	for {
-		exception := ""
-		received := &dto.PacketAddressPair{}
-		packet := &dto.GossipPacket{}
-		select {
-		case received = <-cUI:
-			printClientMessage(received)
-			packet = g.makeNewGossip(received.Packet)
-		case received = <-cEXT:
-			printGossiperMessage(received)
-			g.addToPeers(received.GetSenderAddress())
-			exception = received.GetSenderAddress()
-			packet = g.makeRelayGossip(received.Packet)
-		}
+	cRumor := make(chan *dto.PacketAddressPair)
+	cStatus := make(chan *dto.PacketAddressPair)
+	go g.receiveExternalUDP(cRumor, cStatus)
+	g.rumorListenRoutine(cRumor)
+	//g.statusUpdateRoutine(cStatus)
+}
+
+//Client Handling
+func (g *Gossiper) clientListenRoutine(cUI chan *dto.PacketAddressPair) {
+	for pap := range cUI {
+		printClientMessage(pap)
 		g.printKnownPeers()
-		g.sendAllPeers(packet, exception)
+		packet := g.makeGossip(pap.Packet, true)
 
 		dto.AddRumor(&g.wants, packet)
+		g.sendAllPeers(packet, "")
 
 		if debug {
 			dto.Print(g.wants) //for debugging
@@ -115,17 +91,39 @@ func (g *Gossiper) listenRoutine() {
 	}
 }
 
+//Peer handling
+func (g *Gossiper) rumorListenRoutine(cRumor chan *dto.PacketAddressPair) {
+	for pap := range cRumor {
+		printGossiperMessage(pap)
+		g.addToPeers(pap.SenderAddress)
+		g.printKnownPeers()
+		packet := g.makeGossip(pap.Packet, false)
+
+		dto.AddRumor(&g.wants, packet)
+		g.sendAllPeers(packet, pap.SenderAddress)
+
+		if debug {
+			dto.Print(g.wants) //for debugging
+			status := dto.ToStatusPacket(&g.wants)
+			status.Print()
+		}
+	}
+}
+
+//BASIC RECEIVING
+
 func (g *Gossiper) receiveClientUDP(c chan *dto.PacketAddressPair) {
 	packet := &dto.GossipPacket{}
 	packetBytes := make([]byte, packetSize)
 	for {
 		g.connUI.ReadFromUDP(packetBytes)
 		protobuf.Decode(packetBytes, packet)
+		packet.Simple.OriginalName = g.name
 		c <- &dto.PacketAddressPair{Packet: packet}
 	}
 }
 
-func (g *Gossiper) receiveExternalUDP(c chan *dto.PacketAddressPair) {
+func (g *Gossiper) receiveExternalUDP(cRumor, cStatus chan *dto.PacketAddressPair) {
 	packet := &dto.GossipPacket{}
 	packetBytes := make([]byte, packetSize)
 	for {
@@ -136,7 +134,14 @@ func (g *Gossiper) receiveExternalUDP(c chan *dto.PacketAddressPair) {
 		}
 		senderAddress := udpAddr.IP.String() + ":" + strconv.Itoa(udpAddr.Port)
 		protobuf.Decode(packetBytes, packet)
-		c <- &dto.PacketAddressPair{Packet: packet, SenderAddress: senderAddress}
+		pap := &dto.PacketAddressPair{Packet: packet, SenderAddress: senderAddress}
+
+		switch packet.GetUnderlyingType() {
+		case "status":
+			cStatus <- pap
+		default:
+			cRumor <- pap
+		}
 	}
 }
 
@@ -158,40 +163,48 @@ func (g *Gossiper) sendUDP(packet *dto.GossipPacket, addr string) {
 	g.conn.WriteToUDP(packetBytes, udpAddr)
 }
 
+//PRINTING
+func (g Gossiper) printKnownPeers() {
+	fmt.Println("PEERS " + strings.Join(g.peers, ","))
+}
+
+func printClientMessage(pair *dto.PacketAddressPair) {
+	fmt.Printf("CLIENT MESSAGE %v\n", pair.GetContents())
+}
+
+func printGossiperMessage(pair *dto.PacketAddressPair) {
+	switch subtype := pair.Packet.GetUnderlyingType(); subtype {
+	case "simple":
+		fmt.Printf("SIMPLE MESSAGE origin %v from %v contents %v\n",
+			pair.GetOrigin(), pair.GetSenderAddress(), pair.GetContents())
+	case "rumor":
+		fmt.Printf("RUMOR origin %v from %v ID %v contents %v\n",
+			pair.GetOrigin(), pair.GetSenderAddress(), pair.Packet.Rumor.ID, pair.GetContents())
+	}
+}
+
 //OTHER
 
-func (g *Gossiper) makeNewGossip(received *dto.GossipPacket) (packet *dto.GossipPacket) {
-	received.Simple.OriginalName = g.name
-	g.makeGossip(received, true)
-	return
-}
-
-func (g *Gossiper) makeRelayGossip(received *dto.GossipPacket) (packet *dto.GossipPacket) {
-	g.makeGossip(received, false)
-	return
-}
-
-func (g *Gossiper) makeGossip(received *dto.GossipPacket, fromClient bool) (packet *dto.GossipPacket) {
+func (g *Gossiper) makeGossip(received *dto.GossipPacket, isFromClient bool) (packet *dto.GossipPacket) {
 	if g.UseSimple {
 		simpleMsg := &dto.SimpleMessage{
 			OriginalName:  received.GetOrigin(),
 			RelayPeerAddr: g.address,
 			Contents:      received.GetContents(),
 		}
-		packet = &dto.GossipPacket{Simple: simpleMsg}
+		return &dto.GossipPacket{Simple: simpleMsg}
 	} else {
-		id := received.Rumor.ID
-		if fromClient {
-			id = g.seqID.GetAndIncrement()
-		}
 		rumor := &dto.RumorMessage{
 			Origin: received.GetOrigin(),
-			ID:     id,
 			Text:   received.GetContents(),
 		}
-		packet = &dto.GossipPacket{Rumor: rumor}
+		if isFromClient {
+			rumor.ID = g.seqID.IncrementAndGet()
+		} else {
+			rumor.ID = received.GetSeqID()
+		}
+		return &dto.GossipPacket{Rumor: rumor}
 	}
-	return
 }
 
 //when STATUS messages are implemented, use the necessary map and trash the current "peers" array
