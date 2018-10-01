@@ -15,6 +15,7 @@ func LogError(err error) {
 }
 
 //Common structures
+
 type PacketAddressPair struct {
 	Packet        *GossipPacket
 	SenderAddress string
@@ -148,7 +149,9 @@ func AddRumor(wm *WantsMap, packet *GossipPacket) {
 			v = make([]RumorMessage, 0)
 			(*wm)[rumor.Origin] = v
 		}
-		(*wm)[rumor.Origin] = append(v, *rumor)
+		if rumor.ID == uint32(len(v)) { //only add next message
+			(*wm)[rumor.Origin] = append(v, *rumor)
+		}
 	}
 }
 
@@ -163,17 +166,19 @@ func ToStatusPacket(wm *WantsMap) StatusPacket {
 }
 
 //just for testing
+
 func Print(wm WantsMap) {
 	fmt.Println("-- Printing Wants Map --")
 	for key, value := range wm {
 		fmt.Printf("Identifier: %s\n", key)
-		for i, msg := range value {
-			fmt.Printf("Message ID: %d, Message: %v\n", i, msg.ID, msg.Text)
+		for _, msg := range value {
+			fmt.Printf("Message ID: %d, Message: %v\n", msg.ID, msg.Text)
 		}
 	}
 }
 
 //just for testing
+
 func (sp *StatusPacket) Print() {
 	fmt.Println("-- Printing Status Packet --")
 	for _, v := range sp.Want {
