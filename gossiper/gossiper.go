@@ -36,7 +36,7 @@ type Gossiper struct {
 	UseSimple bool
 	seqID     safeCounter
 	msgMap    dto.MsgMap
-	status    map[string]dto.StatusMap
+	status    map[string]*dto.StatusMap
 
 	conn   *net.UDPConn
 	connUI *net.UDPConn
@@ -82,15 +82,27 @@ func (g *Gossiper) statusUpdateRoutine(cStatus chan *dto.PacketAddressPair) {
 	for pap := range cStatus {
 		printStatusMessage(pap)
 		peer := pap.GetSenderAddress()
-		modified := g.status[peer].UpdateStatusMap(pap.Packet.Status)
-		if modified {
-			g.synchronizeWith(peer)
+		shouldSend := g.status[peer].UpdateStatusMap(pap.Packet.Status)
+		if shouldSend {
+			go g.synchronizeWith(peer)
 		}
 	}
 }
 
 func (g *Gossiper) synchronizeWith(peerAddress string) {
-
+	peerStatus, stop := g.status[peerAddress].GetOneOutdated(g.msgMap.ToStatusMap(), true)
+	for !stop {
+		rumor := g.msgMap.GetRumor(peerAddress, peerStatus.NextID)
+		packet := dto.GossipPacket{Rumor: rumor}
+		g.sendUDP(&packet, peerAddress)
+		g.msgMap.Lock()
+		peerStatus, stop = g.status[peerAddress].GetOneOutdated(g.msgMap.ToStatusMap(), true)
+		g.msgMap.Unlock()
+	}
+	_, inSync := g.msgMap.ToStatusMap().GetOneOutdated(g.status[peerAddress], false)
+	if !inSync {
+		g.acknowledge(peerAddress)
+	}
 }
 
 func (g *Gossiper) acknowledge(peerAddress string) {
@@ -178,6 +190,7 @@ func (g *Gossiper) receiveExternalUDP(cRumor, cStatus chan *dto.PacketAddressPai
 //SENDING
 func (g *Gossiper) sendAllPeers(packet *dto.GossipPacket, exception string) {
 	for _, v := range g.peers {
+		g.status[v]
 		if v != exception {
 			g.sendUDP(packet, v)
 		}
