@@ -151,9 +151,14 @@ type StatusMap struct {
 	mux     sync.Mutex
 }
 
+func NewStatusMap() StatusMap {
+	return StatusMap{m: make(map[string]uint32)}
+}
+
 func (wm *MsgMap) AddRumor(packet *GossipPacket) {
 	rumor := packet.Rumor
 	if rumor != nil {
+		wm.mux.Lock()
 		v, ok := wm.rumors[rumor.Origin]
 		if !ok {
 			v = make([]RumorMessage, 0)
@@ -162,19 +167,45 @@ func (wm *MsgMap) AddRumor(packet *GossipPacket) {
 		if rumor.ID == uint32(len(v)) { //only add next message
 			wm.rumors[rumor.Origin] = append(v, *rumor)
 		}
+		wm.mux.Unlock()
 	}
 }
 
+func SelectOutdated(smOld *StatusMap, smNew *StatusMap) []PeerStatus {
+	outdated := make([]PeerStatus, 0)
+	smNew.mux.Lock()
+	smOld.mux.Lock()
+	for kn, vn := range smNew.m {
+		vo, ok := smOld.m[kn]
+		if !ok || vn > vo {
+			outdated = append(outdated, PeerStatus{Identifier: kn, NextID: vo})
+		}
+	}
+	smOld.mux.Lock()
+	smNew.mux.Lock()
+	return outdated
+}
+
 func (wm *MsgMap) ToStatusPacket() *StatusPacket {
+	wm.mux.Lock()
 	statusList := make([]PeerStatus, len(wm.rumors))
 	i := 0
-	wm.mux.Lock()
 	for k, v := range wm.rumors {
 		statusList[i] = PeerStatus{Identifier: k, NextID: uint32(len(v) + 1)}
 		i++
 	}
 	wm.mux.Unlock()
 	return &StatusPacket{Want: statusList}
+}
+
+func (wm *MsgMap) ToStatusMap() *StatusMap {
+	wm.mux.Lock()
+	statusMap := NewStatusMap()
+	for k, v := range wm.rumors {
+		statusMap.m[k] = uint32(len(v) + 1)
+	}
+	wm.mux.Unlock()
+	return &statusMap
 }
 
 func (sm StatusMap) UpdateStatusMap(sp *StatusPacket) (modified bool) {
