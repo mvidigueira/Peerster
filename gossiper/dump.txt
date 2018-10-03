@@ -1,0 +1,35 @@
+package gossiper
+
+//Status Handling
+func (g *Gossiper) statusUpdateRoutine(cStatus chan *dto.PacketAddressPair) {
+	for pap := range cStatus {
+		printStatusMessage(pap)
+		peer := pap.GetSenderAddress()
+		shouldSend := g.status[peer].UpdateStatusMap(pap.Packet.Status)
+		if shouldSend {
+			go g.synchronizeWith(peer)
+		}
+	}
+}
+
+func (g *Gossiper) synchronizeWith(peerAddress string) {
+	peerStatus, stop := g.status[peerAddress].GetOneOutdated(g.msgMap.ToStatusMap(), true)
+	for !stop {
+		rumor := g.msgMap.GetRumor(peerAddress, peerStatus.NextID)
+		packet := dto.GossipPacket{Rumor: rumor}
+		g.sendUDP(&packet, peerAddress)
+		g.msgMap.Lock()
+		peerStatus, stop = g.status[peerAddress].GetOneOutdated(g.msgMap.ToStatusMap(), true)
+		g.msgMap.Unlock()
+	}
+	_, inSync := g.msgMap.ToStatusMap().GetOneOutdated(g.status[peerAddress], false)
+	if !inSync {
+		g.acknowledge(peerAddress)
+	}
+}
+
+func (g *Gossiper) acknowledge(peerAddress string) {
+	status := g.msgMap.ToStatusPacket()
+	packet := &dto.GossipPacket{Status: status}
+	g.sendUDP(packet, peerAddress)
+}
