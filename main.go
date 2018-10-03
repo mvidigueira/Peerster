@@ -3,6 +3,8 @@ package main
 import (
 	"flag"
 	"strings"
+
+	"github.com/mvidigueira/Peerster/gossiper"
 )
 
 func main() {
@@ -18,7 +20,7 @@ func main() {
 	if *peersStr != "" {
 		peers = strings.Split(*peersStr, ",")
 	}
-	gossiper := NewGossiper(*gossipAddr, *name, *UIPort, peers, *simple)
+	g := gossiper.NewGossiper(*gossipAddr, *name, *UIPort, peers, *simple)
 
-	gossiper.start()
+	g.Start()
 }

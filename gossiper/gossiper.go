@@ -1,7 +1,8 @@
-package main
+package gossiper
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"protobuf"
 	"strconv"
@@ -14,12 +15,12 @@ import (
 const packetSize = 1024
 const debug = false
 
-type SafeCounter struct {
+type safeCounter struct {
 	v   uint32
 	mux sync.Mutex
 }
 
-func (sc *SafeCounter) IncrementAndGet() (v uint32) {
+func (sc *safeCounter) incrementAndGet() (v uint32) {
 	sc.mux.Lock()
 	sc.v++
 	v = sc.v
@@ -27,18 +28,21 @@ func (sc *SafeCounter) IncrementAndGet() (v uint32) {
 	return
 }
 
+//Gossiper server responsible for answering client requests and rumor mongering with other gossipers
 type Gossiper struct {
 	address   string
 	name      string
 	peers     []string
 	UseSimple bool
-	seqID     SafeCounter
-	wants     dto.WantsMap
+	seqID     safeCounter
+	msgMap    dto.MsgMap
+	status    map[string]dto.StatusMap
 
 	conn   *net.UDPConn
 	connUI *net.UDPConn
 }
 
+//NewGossiper creates a new gossiper
 func NewGossiper(address, name string, UIport int, peers []string, simple bool) *Gossiper {
 	gossipAddr, err := net.ResolveUDPAddr("udp4", address)
 	clientAddr, err := net.ResolveUDPAddr("udp4", "localhost:"+strconv.Itoa(UIport))
@@ -52,16 +56,16 @@ func NewGossiper(address, name string, UIport int, peers []string, simple bool) 
 		name:      name,
 		peers:     peers,
 		UseSimple: simple,
-		seqID:     SafeCounter{},
-		wants:     dto.WantsMap{},
+		seqID:     safeCounter{},
+		msgMap:    dto.MsgMap{},
 
 		conn:   udpConnGossip,
 		connUI: udpConnClient,
 	}
 }
 
-//Start
-func (g *Gossiper) start() {
+//Start starts the gossiper listening routines
+func (g *Gossiper) Start() {
 	cUI := make(chan *dto.PacketAddressPair)
 	go g.receiveClientUDP(cUI)
 	go g.clientListenRoutine(cUI)
@@ -69,8 +73,30 @@ func (g *Gossiper) start() {
 	cRumor := make(chan *dto.PacketAddressPair)
 	cStatus := make(chan *dto.PacketAddressPair)
 	go g.receiveExternalUDP(cRumor, cStatus)
-	g.rumorListenRoutine(cRumor)
-	//g.statusUpdateRoutine(cStatus)
+	go g.rumorListenRoutine(cRumor)
+	g.statusUpdateRoutine(cStatus)
+}
+
+//Status Handling
+func (g *Gossiper) statusUpdateRoutine(cStatus chan *dto.PacketAddressPair) {
+	for pap := range cStatus {
+		printStatusMessage(pap)
+		peer := pap.GetSenderAddress()
+		modified := g.status[peer].UpdateStatusMap(pap.Packet.Status)
+		if modified {
+			g.synchronizeWith(peer)
+		}
+	}
+}
+
+func (g *Gossiper) synchronizeWith(peerAddress string) {
+
+}
+
+func (g *Gossiper) acknowledge(peerAddress string) {
+	status := g.msgMap.ToStatusPacket()
+	packet := &dto.GossipPacket{Status: status}
+	g.sendUDP(packet, peerAddress)
 }
 
 //Client Handling
@@ -80,12 +106,12 @@ func (g *Gossiper) clientListenRoutine(cUI chan *dto.PacketAddressPair) {
 		g.printKnownPeers()
 		packet := g.makeGossip(pap.Packet, true)
 
-		dto.AddRumor(&g.wants, packet)
+		g.msgMap.AddRumor(packet)
 		g.sendAllPeers(packet, "")
 
 		if debug {
-			dto.Print(g.wants) //for debugging
-			status := dto.ToStatusPacket(&g.wants)
+			dto.Print(&g.msgMap) //for debugging
+			status := g.msgMap.ToStatusPacket()
 			status.Print()
 		}
 	}
@@ -99,12 +125,13 @@ func (g *Gossiper) rumorListenRoutine(cRumor chan *dto.PacketAddressPair) {
 		g.printKnownPeers()
 		packet := g.makeGossip(pap.Packet, false)
 
-		dto.AddRumor(&g.wants, packet)
+		g.msgMap.AddRumor(packet)
+		g.acknowledge(pap.GetSenderAddress())
 		g.sendAllPeers(packet, pap.SenderAddress)
 
 		if debug {
-			dto.Print(g.wants) //for debugging
-			status := dto.ToStatusPacket(&g.wants)
+			dto.Print(&g.msgMap) //for debugging
+			status := g.msgMap.ToStatusPacket()
 			status.Print()
 		}
 	}
@@ -128,9 +155,12 @@ func (g *Gossiper) receiveExternalUDP(cRumor, cStatus chan *dto.PacketAddressPai
 	packetBytes := make([]byte, packetSize)
 	for {
 		n, udpAddr, err := g.conn.ReadFromUDP(packetBytes)
-		dto.LogError(err)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
 		if n > packetSize {
-			dto.LogError(fmt.Errorf("Warning: Received packet size (%d) exceeds default value of %d", n, packetSize))
+			log.Panic(fmt.Errorf("Warning: Received packet size (%d) exceeds default value of %d", n, packetSize))
 		}
 		senderAddress := udpAddr.IP.String() + ":" + strconv.Itoa(udpAddr.Port)
 		protobuf.Decode(packetBytes, packet)
@@ -164,8 +194,12 @@ func (g *Gossiper) sendUDP(packet *dto.GossipPacket, addr string) {
 }
 
 //PRINTING
-func (g Gossiper) printKnownPeers() {
+func (g *Gossiper) printKnownPeers() {
 	fmt.Println("PEERS " + strings.Join(g.peers, ","))
+}
+
+func printStatusMessage(pair *dto.PacketAddressPair) {
+	fmt.Printf("STATUS from %v %v\n", pair.GetSenderAddress(), pair.Packet.Status.String())
 }
 
 func printClientMessage(pair *dto.PacketAddressPair) {
@@ -192,19 +226,20 @@ func (g *Gossiper) makeGossip(received *dto.GossipPacket, isFromClient bool) (pa
 			RelayPeerAddr: g.address,
 			Contents:      received.GetContents(),
 		}
-		return &dto.GossipPacket{Simple: simpleMsg}
+		packet = &dto.GossipPacket{Simple: simpleMsg}
 	} else {
 		rumor := &dto.RumorMessage{
 			Origin: received.GetOrigin(),
 			Text:   received.GetContents(),
 		}
 		if isFromClient {
-			rumor.ID = g.seqID.IncrementAndGet()
+			rumor.ID = g.seqID.incrementAndGet()
 		} else {
 			rumor.ID = received.GetSeqID()
 		}
-		return &dto.GossipPacket{Rumor: rumor}
+		packet = &dto.GossipPacket{Rumor: rumor}
 	}
+	return
 }
 
 //when STATUS messages are implemented, use the necessary map and trash the current "peers" array

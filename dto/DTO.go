@@ -3,6 +3,7 @@ package dto
 import (
 	"fmt"
 	"log"
+	"sync"
 	"time"
 )
 
@@ -139,42 +140,72 @@ func (e *GossipPacketError) Error() string {
 
 //STATUS
 
-type WantsMap = map[string][]RumorMessage
+type MsgMap struct {
+	rumors map[string][]RumorMessage
+	mux    sync.Mutex
+}
 
-func AddRumor(wm *WantsMap, packet *GossipPacket) {
+type StatusMap struct {
+	m       map[string]uint32
+	sending bool
+	mux     sync.Mutex
+}
+
+func (wm *MsgMap) AddRumor(packet *GossipPacket) {
 	rumor := packet.Rumor
 	if rumor != nil {
-		v, ok := (*wm)[rumor.Origin]
+		v, ok := wm.rumors[rumor.Origin]
 		if !ok {
 			v = make([]RumorMessage, 0)
-			(*wm)[rumor.Origin] = v
+			wm.rumors[rumor.Origin] = v
 		}
 		if rumor.ID == uint32(len(v)) { //only add next message
-			(*wm)[rumor.Origin] = append(v, *rumor)
+			wm.rumors[rumor.Origin] = append(v, *rumor)
 		}
 	}
 }
 
-func ToStatusPacket(wm *WantsMap) StatusPacket {
-	statusList := make([]PeerStatus, len(*wm))
+func (wm *MsgMap) ToStatusPacket() *StatusPacket {
+	statusList := make([]PeerStatus, len(wm.rumors))
 	i := 0
-	for k, v := range *wm {
+	wm.mux.Lock()
+	for k, v := range wm.rumors {
 		statusList[i] = PeerStatus{Identifier: k, NextID: uint32(len(v) + 1)}
 		i++
 	}
-	return StatusPacket{Want: statusList}
+	wm.mux.Unlock()
+	return &StatusPacket{Want: statusList}
+}
+
+func (sm StatusMap) UpdateStatusMap(sp *StatusPacket) (modified bool) {
+	sm.mux.Lock()
+	modified = false
+	for _, pair := range sp.Want {
+		value, ok := sm.m[pair.Identifier]
+		if !ok || pair.NextID > value {
+			sm.m[pair.Identifier] = value
+			modified = true
+		}
+	}
+	if modified {
+		sm.sending = true
+	}
+	sm.mux.Unlock()
+	return
 }
 
 //just for testing
 
-func Print(wm WantsMap) {
-	fmt.Println("-- Printing Wants Map --")
-	for key, value := range wm {
+func Print(wm *MsgMap) {
+	fmt.Println("-- Printing Msg Map --")
+	wm.mux.Lock()
+	for key, value := range wm.rumors {
 		fmt.Printf("Identifier: %s\n", key)
 		for _, msg := range value {
 			fmt.Printf("Message ID: %d, Message: %v\n", msg.ID, msg.Text)
 		}
 	}
+	wm.mux.Unlock()
 }
 
 //just for testing
@@ -184,4 +215,12 @@ func (sp *StatusPacket) Print() {
 	for _, v := range sp.Want {
 		fmt.Printf("Identifier: %s, Next ID: %d\n", v.Identifier, v.NextID)
 	}
+}
+
+func (sp *StatusPacket) String() string {
+	str := ""
+	for _, v := range sp.Want {
+		str = str + fmt.Sprintf("peer %s nextID %d ", v.Identifier, v.NextID)
+	}
+	return str
 }
