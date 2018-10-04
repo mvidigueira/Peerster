@@ -2,108 +2,54 @@ package dto
 
 import "sync"
 
+//AtomicStatusMap - vector clock for nextIDs according to origin
 type AtomicStatusMap struct {
-	nextIDmap map[string]*SyncSendId
+	nextIDmap map[string]*SpecialID
 	mux       sync.Mutex
 }
 
+//NewAtomicStatusMap - for the creation of Atomic Status Maps
 func NewAtomicStatusMap() *AtomicStatusMap {
-	return &AtomicStatusMap{nextIDmap: make(map[string]*SyncSendId), mux: sync.Mutex{}}
+	return &AtomicStatusMap{nextIDmap: make(map[string]*SpecialID), mux: sync.Mutex{}}
 }
 
-func (asm AtomicStatusMap) GetSyncID(origin string) *SyncSendId {
+func (asm *AtomicStatusMap) getSpecialID(origin string) *SpecialID {
 	asm.mux.Lock()
 	defer asm.mux.Unlock()
-	vSync, ok := asm.nextIDmap[origin]
+	spID, ok := asm.nextIDmap[origin]
 	if !ok {
-		vSync := NewSyncSendId(1)
-		asm.nextIDmap[origin] = vSync
-		return vSync
+		spID = NewSpecialID(1)
+		asm.nextIDmap[origin] = spID
+		return spID
 	}
-	return vSync
+	return spID
 }
 
-func (asm AtomicStatusMap) SafeGetNextId(origin string) uint32 {
-	sync := asm.GetSyncID(origin)
-	return sync.SafeGetNextId()
-}
-
-func (smOld *AtomicStatusMap) IsOutdatedForOrigin(smNew *AtomicStatusMap, origin string) bool {
-	vNew := smNew.nextIDmap[origin].GetNextId()
-	vOldS, ok := smOld.nextIDmap[origin]
-	if !ok || vNew > vOldS.GetNextId() {
-		return true
-	}
-	return false
-}
-
-func (asm AtomicStatusMap) SafeUpdate(sp StatusPacket) (modified bool) {
-	modified = false
-	asm.mux.Lock()
-	defer asm.mux.Unlock()
+func (asm *AtomicStatusMap) safeUpdate(sp StatusPacket) {
 	for _, pair := range sp.Want {
-		value, ok := asm.nextIDmap[pair.Identifier]
-		if !ok {
-			asm.nextIDmap[pair.Identifier] = NewSyncSendId(value.GetNextId())
-			modified = true
-		} else {
-			modified = (modified || value.SetIfGreater(pair.NextID))
-		}
+		spID := asm.getSpecialID(pair.Identifier)
+		spID.setIfGreater(pair.NextID)
 	}
 	return
 }
 
-func (smOld *AtomicStatusMap) AcquireSendRightsIfOutdatedForOrigin(smNew *AtomicStatusMap, origin string) (success bool) {
-	syncOld := smOld.GetSyncID(origin)
-	syncNew := smNew.GetSyncID(origin)
+func (asm *AtomicStatusMap) getIDOutdatedForOrigin(asmNew *AtomicStatusMap, origin string) (NextID uint32, outdated bool) {
+	spIDOld := asm.getSpecialID(origin)
+	spIDNew := asmNew.getSpecialID(origin)
 
-	return syncOld.AcquireSendRightsIfOutdatedComparedTo(syncNew)
+	return spIDOld.isOutdatedComparedTo(spIDNew)
 }
 
-func (smOld *AtomicStatusMap) ReleaseSendRightsIfNotOutdatedForOrigin(smNew *AtomicStatusMap, origin string) (success bool) {
-	syncOld := smOld.GetSyncID(origin)
-	syncNew := smNew.GetSyncID(origin)
+func (asm *AtomicStatusMap) acquireSendRightsIfOutdatedForOrigin(asmNew *AtomicStatusMap, origin string) (success bool) {
+	spIDOld := asm.getSpecialID(origin)
+	spIDNew := asmNew.getSpecialID(origin)
 
-	return syncOld.ReleaseSendRightsIfNotOutdatedComparedTo(syncNew)
+	return spIDOld.acquireSendRightsIfOutdatedComparedTo(spIDNew)
 }
 
-/*
-	peerStatusMap.Lock()
-	defer peerStatusMap.Unlock()
-	so.ownStatusMap.Lock()
-	defer so.ownStatusMap.Unlock()
-*/
+func (asm *AtomicStatusMap) releaseSendRightsIfNotOutdatedForOrigin(smNew *AtomicStatusMap, origin string) (success bool) {
+	spIDOld := asm.getSpecialID(origin)
+	spIDNew := smNew.getSpecialID(origin)
 
-func (asm AtomicStatusMap) Lock() {
-	asm.mux.Lock()
+	return spIDOld.releaseSendRightsIfNotOutdatedComparedTo(spIDNew)
 }
-
-func (asm AtomicStatusMap) Unlock() {
-	asm.mux.Unlock()
-}
-
-/*
-func (smOld *AtomicStatusMap) IsOutdated(smNew *AtomicStatusMap) bool {
-	for kn, vn := range smNew.nextIDmap {
-		vo, ok := smOld.nextIDmap[kn]
-		if !ok || vn.GetNextId() > vo.GetNextId() {
-			return true
-		}
-	}
-	return false
-}
-*/
-/*
-func (smOld *AtomicStatusMap) IsOutdatedForOrigin(smNew *AtomicStatusMap, origin string) (wants uint32, isOutdated bool) {
-	vNew := smNew.nextIDmap[origin].GetNextId()
-	vOldS, ok := smOld.nextIDmap[origin]
-	var vOld uint32
-	if !ok {
-		smOld.nextIDmap[origin] = NewSyncSendId(1)
-		return 1, true
-	} else if vOld = vOldS.GetNextId(); vNew > vOld {
-		return vOld, true
-	}
-	return vOld, false
-}
-*/

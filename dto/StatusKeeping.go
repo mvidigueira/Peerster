@@ -2,29 +2,78 @@ package dto
 
 import "sync"
 
+//SynchronizationObject - Object for storing rumors, statuses, and synchronizing messages with peers
 type SynchronizationObject struct {
-	msgs          map[string]*AtomicMessageList
+	msgs          map[string]*AtomicMessageList //key = origin
 	ownStatusMap  *AtomicStatusMap
-	peerStatusMap map[string]*AtomicStatusMap
+	peerStatusMap map[string]*AtomicStatusMap //key = peerAddress
 	mux           sync.Mutex
 }
 
-func NewSynchronizationObject() SynchronizationObject {
-	return SynchronizationObject{msgs: make(map[string]*AtomicMessageList), ownStatusMap: NewAtomicStatusMap(), peerStatusMap: make(map[string]*AtomicStatusMap), mux: sync.Mutex{}}
+//NewSynchronizationObject - for the creation of SynchronizationObjects
+func NewSynchronizationObject() *SynchronizationObject {
+	return &SynchronizationObject{msgs: make(map[string]*AtomicMessageList), ownStatusMap: NewAtomicStatusMap(), peerStatusMap: make(map[string]*AtomicStatusMap), mux: sync.Mutex{}}
 }
 
-func (so SynchronizationObject) GetSendingRights(peer string, origin string) (success bool) {
-	so.mux.Lock()
-	peerStatusMap := so.peerStatusMap[peer]
-	so.mux.Unlock()
+//Atomic Message List basic operations
 
-	return peerStatusMap.AcquireSendRightsIfOutdatedForOrigin(so.ownStatusMap, origin)
+//GetMessageList - atomically retrieve MessageList corresponding to 'origin'
+func (so *SynchronizationObject) GetMessageList(origin string) *AtomicMessageList {
+	so.mux.Lock()
+	defer so.mux.Unlock()
+	aml, ok := so.msgs[origin]
+	if !ok {
+		aml = NewAtomicMessageList()
+		so.msgs[origin] = aml
+	}
+	return aml
 }
 
-func (so SynchronizationObject) ReleaseSendingRights(peer string, origin string) (success bool) {
-	so.mux.Lock()
-	peerStatusMap := so.peerStatusMap[peer]
-	so.mux.Unlock()
+//AddMessage - adds a RumorMessage for storage
+func (so *SynchronizationObject) AddMessage(rm RumorMessage) {
+	aml := so.GetMessageList(rm.Origin)
+	nextID := aml.appendMessage(rm)
+	spID := so.ownStatusMap.getSpecialID(rm.Origin)
+	spID.setIfGreater(nextID)
+}
 
-	return peerStatusMap.ReleaseSendRightsIfNotOutdatedForOrigin(so.ownStatusMap, origin)
+//GetOutdatedMessageByOrigin - returns first message that 'peerAdress' is missing
+//or if peer is up to date, returns outdated == false
+func (so *SynchronizationObject) GetOutdatedMessageByOrigin(peerAddress, origin string) (rm RumorMessage, outdated bool) {
+	peerStatusMap := so.GetPeerStatusMap(peerAddress)
+	id, outdated := peerStatusMap.getIDOutdatedForOrigin(so.ownStatusMap, origin)
+	if !outdated {
+		return
+	}
+	aml := so.GetMessageList(rm.Origin)
+	rm = aml.getMessage(id)
+	return
+}
+
+//Peer Status Map basic operations
+
+//GetPeerStatusMap - atomically retrieve StatusMap corresponding to 'peerAddress'
+func (so *SynchronizationObject) GetPeerStatusMap(peerAddress string) *AtomicStatusMap {
+	so.mux.Lock()
+	defer so.mux.Unlock()
+	asm, ok := so.peerStatusMap[peerAddress]
+	if !ok {
+		asm = NewAtomicStatusMap()
+		so.peerStatusMap[peerAddress] = asm
+	}
+	return asm
+}
+
+//SENDING RIGHTS
+
+//GetSendingRights - called when attempting to start synchronizing with 'peer' for messages from 'origin'
+func (so *SynchronizationObject) GetSendingRights(peer string, origin string) (success bool) {
+	peerStatusMap := so.GetPeerStatusMap(peer)
+	return peerStatusMap.acquireSendRightsIfOutdatedForOrigin(so.ownStatusMap, origin)
+}
+
+//ReleaseSendingRights - called when attempting to finish synchronizing with 'peer' for messages from 'origin'
+func (so *SynchronizationObject) ReleaseSendingRights(peer string, origin string) (success bool) {
+	peerStatusMap := so.GetPeerStatusMap(peer)
+	return peerStatusMap.releaseSendRightsIfNotOutdatedForOrigin(so.ownStatusMap, origin)
 }
