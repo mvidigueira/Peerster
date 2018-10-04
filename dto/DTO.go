@@ -8,38 +8,46 @@ import (
 
 //Common error logging
 
+//LogError - common function for fatal errors
 func LogError(err error) {
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
-//Common structures
-
+//PacketAddressPair - Packet and Address pair structure
 type PacketAddressPair struct {
 	Packet        *GossipPacket
 	SenderAddress string
 }
+
+//GossipPacket - protocol structure to be serialized and sent between peers
 type GossipPacket struct {
 	Simple *SimpleMessage
 	Rumor  *RumorMessage
 	Status *StatusPacket
 }
 
+//SimpleMessage - subtype of GossipPacket to be used between peers when running in 'simple' mode
 type SimpleMessage struct {
 	OriginalName  string
 	RelayPeerAddr string
 	Contents      string
 }
+
+//RumorMessage - subtype of GossipPacket to be used between peers normally
 type RumorMessage struct {
 	Origin string
 	ID     uint32
 	Text   string
 }
 
+//StatusPacket - subtype of GossipPacket used for acknowledgments and Anti-entropy
 type StatusPacket struct {
 	Want []PeerStatus
 }
+
+//PeerStatus - represents the desired 'NextID' from origin specified by 'Identifier'
 type PeerStatus struct {
 	Identifier string
 	NextID     uint32
@@ -53,8 +61,7 @@ func (sp *StatusPacket) String() string {
 	return str
 }
 
-//Extra Functions
-
+//GetSenderAddress - returns the sender address of the PacketAddresspair
 func (pap *PacketAddressPair) GetSenderAddress() (address string) {
 	switch subtype := pap.Packet.GetUnderlyingType(); subtype {
 	case "simple":
@@ -65,14 +72,17 @@ func (pap *PacketAddressPair) GetSenderAddress() (address string) {
 	return
 }
 
+//GetContents - returns the message (text) contents of the PacketAddresspair
 func (pap *PacketAddressPair) GetContents() string {
 	return pap.Packet.GetContents()
 }
 
+//GetOrigin - returns the origin name of the PacketAddresspair
 func (pap *PacketAddressPair) GetOrigin() string {
 	return pap.Packet.GetOrigin()
 }
 
+//GetContents - returns the message (text) contents of the gossip packet
 func (g *GossipPacket) GetContents() (contents string) {
 	switch subtype := g.GetUnderlyingType(); subtype {
 	case "simple":
@@ -89,6 +99,7 @@ func (g *GossipPacket) GetContents() (contents string) {
 	return
 }
 
+//GetOrigin - returns the origin name of the gossip packet
 func (g *GossipPacket) GetOrigin() (origin string) {
 	switch subtype := g.GetUnderlyingType(); subtype {
 	case "simple":
@@ -105,6 +116,7 @@ func (g *GossipPacket) GetOrigin() (origin string) {
 	return
 }
 
+//GetSeqID - returns the sequence id of the gossip packet
 func (g *GossipPacket) GetSeqID() (id uint32) {
 	switch subtype := g.GetUnderlyingType(); subtype {
 	case "simple":
@@ -122,6 +134,7 @@ func (g *GossipPacket) GetSeqID() (id uint32) {
 	return
 }
 
+//GetUnderlyingType - returns the underlying type of the gossip packet, or the empty string in case of no subtype
 func (g *GossipPacket) GetUnderlyingType() (subtype string) {
 	if g.Simple != nil {
 		subtype = "simple"
@@ -135,6 +148,7 @@ func (g *GossipPacket) GetUnderlyingType() (subtype string) {
 	return
 }
 
+//GossipPacketError - general error type for gossip packets
 type GossipPacketError struct {
 	When time.Time
 	What string
