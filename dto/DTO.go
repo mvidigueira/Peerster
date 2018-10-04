@@ -45,6 +45,14 @@ type PeerStatus struct {
 	NextID     uint32
 }
 
+func (sp *StatusPacket) String() string {
+	str := ""
+	for _, v := range sp.Want {
+		str = str + fmt.Sprintf("peer %s nextID %d ", v.Identifier, v.NextID)
+	}
+	return str
+}
+
 //Extra Functions
 
 func (pap *PacketAddressPair) GetSenderAddress() (address string) {
