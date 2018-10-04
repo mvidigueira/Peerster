@@ -29,12 +29,30 @@ func (so *SynchronizationObject) GetMessageList(origin string) *AtomicMessageLis
 	return aml
 }
 
+//GetPeerStatusMap - atomically retrieve StatusMap corresponding to 'peerAddress'
+func (so *SynchronizationObject) GetPeerStatusMap(peerAddress string) *AtomicStatusMap {
+	so.mux.Lock()
+	defer so.mux.Unlock()
+	asm, ok := so.peerStatusMap[peerAddress]
+	if !ok {
+		asm = NewAtomicStatusMap()
+		so.peerStatusMap[peerAddress] = asm
+	}
+	return asm
+}
+
 //AddMessage - adds a RumorMessage for storage
 func (so *SynchronizationObject) AddMessage(rm RumorMessage) {
 	aml := so.GetMessageList(rm.Origin)
 	nextID := aml.appendMessage(rm)
 	spID := so.ownStatusMap.getSpecialID(rm.Origin)
 	spID.setIfGreater(nextID)
+}
+
+//UpdateStatus - updates the status map of 'peerAddress' according to a recently received StatusPacket 'status'
+func (so *SynchronizationObject) UpdateStatus(peerAddress string, status StatusPacket) {
+	peerStatusMap := so.GetPeerStatusMap(peerAddress)
+	peerStatusMap.safeUpdate(status)
 }
 
 //GetOutdatedMessageByOrigin - returns first message that 'peerAdress' is missing
@@ -49,22 +67,6 @@ func (so *SynchronizationObject) GetOutdatedMessageByOrigin(peerAddress, origin 
 	rm = aml.getMessage(id)
 	return
 }
-
-//Peer Status Map basic operations
-
-//GetPeerStatusMap - atomically retrieve StatusMap corresponding to 'peerAddress'
-func (so *SynchronizationObject) GetPeerStatusMap(peerAddress string) *AtomicStatusMap {
-	so.mux.Lock()
-	defer so.mux.Unlock()
-	asm, ok := so.peerStatusMap[peerAddress]
-	if !ok {
-		asm = NewAtomicStatusMap()
-		so.peerStatusMap[peerAddress] = asm
-	}
-	return asm
-}
-
-//SENDING RIGHTS
 
 //GetSendingRights - called when attempting to start synchronizing with 'peer' for messages from 'origin'
 func (so *SynchronizationObject) GetSendingRights(peer string, origin string) (success bool) {
