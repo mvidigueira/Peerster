@@ -7,7 +7,7 @@ import (
 	"protobuf"
 	"strconv"
 	"strings"
-	"sync"
+	"time"
 
 	"github.com/mvidigueira/Peerster/dto"
 )
@@ -15,26 +15,14 @@ import (
 const packetSize = 1024
 const debug = false
 
-type safeCounter struct {
-	v   uint32
-	mux sync.Mutex
-}
-
-func (sc *safeCounter) incrementAndGet() (v uint32) {
-	sc.mux.Lock()
-	sc.v++
-	v = sc.v
-	sc.mux.Unlock()
-	return
-}
-
 //Gossiper server responsible for answering client requests and rumor mongering with other gossipers
 type Gossiper struct {
 	address   string
 	name      string
 	peers     []string
 	UseSimple bool
-	seqID     safeCounter
+	seqID     *dto.SafeCounter
+	syncObj   *dto.SynchronizationObject
 
 	conn   *net.UDPConn
 	connUI *net.UDPConn
@@ -54,7 +42,8 @@ func NewGossiper(address, name string, UIport int, peers []string, simple bool) 
 		name:      name,
 		peers:     peers,
 		UseSimple: simple,
-		seqID:     safeCounter{},
+		seqID:     dto.NewSafeCounter(),
+		syncObj:   dto.NewSynchronizationObject(),
 
 		conn:   udpConnGossip,
 		connUI: udpConnClient,
@@ -79,9 +68,11 @@ func (g *Gossiper) clientListenRoutine(cUI chan *dto.PacketAddressPair) {
 		printClientMessage(pap)
 		g.printKnownPeers()
 		packet := g.makeGossip(pap.Packet, true)
-
-		//g.msgMap.AddRumor(packet)
-		g.sendAllPeers(packet, "")
+		if !g.UseSimple {
+			g.syncObj.AddMessage(*packet.Rumor)
+		} else {
+			g.sendAllPeers(packet, "")
+		}
 		/*
 			if debug {
 				dto.Print(&g.msgMap) //for debugging
@@ -99,10 +90,14 @@ func (g *Gossiper) rumorListenRoutine(cRumor chan *dto.PacketAddressPair) {
 		g.addToPeers(pap.SenderAddress)
 		g.printKnownPeers()
 		packet := g.makeGossip(pap.Packet, false)
+		if !g.UseSimple {
+			g.syncObj.AddMessage(*packet.Rumor)
+			g.acknowledge(pap.GetSenderAddress())
+			go g.synchronize(pap.GetSenderAddress(), packet.Rumor.Origin)
+		} else {
+			g.sendAllPeers(packet, pap.SenderAddress)
+		}
 
-		//g.msgMap.AddRumor(packet)
-		//g.acknowledge(pap.GetSenderAddress())
-		g.sendAllPeers(packet, pap.SenderAddress)
 		/*
 			if debug {
 				dto.Print(&g.msgMap) //for debugging
@@ -111,6 +106,28 @@ func (g *Gossiper) rumorListenRoutine(cRumor chan *dto.PacketAddressPair) {
 			}
 		*/
 	}
+}
+
+func (g *Gossiper) statusListenRoutine(cRumor chan *dto.PacketAddressPair) {
+	//TODO: complete code
+}
+
+func (g *Gossiper) synchronize(peerAddress, origin string) {
+	if !g.syncObj.GetSendingRights(peerAddress, origin) {
+		return
+	}
+	for !g.syncObj.ReleaseSendingRights(peerAddress, origin) {
+		rm, _ := g.syncObj.GetOutdatedMessageByOrigin(peerAddress, origin)
+		packet := &dto.GossipPacket{Rumor: &rm}
+		g.sendUDP(packet, peerAddress)
+		time.Sleep(time.Second)
+	}
+}
+
+func (g *Gossiper) acknowledge(peerAddress string) {
+	status := g.syncObj.CreateOwnStatusPacket()
+	packet := &dto.GossipPacket{Status: status}
+	g.sendUDP(packet, peerAddress)
 }
 
 //BASIC RECEIVING
@@ -209,7 +226,7 @@ func (g *Gossiper) makeGossip(received *dto.GossipPacket, isFromClient bool) (pa
 			Text:   received.GetContents(),
 		}
 		if isFromClient {
-			rumor.ID = g.seqID.incrementAndGet()
+			rumor.ID = g.seqID.IncrementAndGet()
 		} else {
 			rumor.ID = received.GetSeqID()
 		}
@@ -218,6 +235,7 @@ func (g *Gossiper) makeGossip(received *dto.GossipPacket, isFromClient bool) (pa
 	return
 }
 
+//PS: HAS CONCURRENCY ISSUES, needs mutex at least if to be kept
 //when STATUS messages are implemented, use the necessary map and trash the current "peers" array
 //so use the corresponding search method. Current O(N) complexity is very bad:
 func (g *Gossiper) addToPeers(peerAddr string) {

@@ -53,3 +53,14 @@ func (asm *AtomicStatusMap) releaseSendRightsIfNotOutdatedForOrigin(smNew *Atomi
 
 	return spIDOld.releaseSendRightsIfNotOutdatedComparedTo(spIDNew)
 }
+
+func (asm *AtomicStatusMap) toStatusPacket() *StatusPacket {
+	asm.mux.Lock()
+	defer asm.mux.Unlock()
+	i := 0
+	wantsList := make([]PeerStatus, len(asm.nextIDmap))
+	for origin, spID := range asm.nextIDmap {
+		wantsList[i] = PeerStatus{Identifier: origin, NextID: spID.getNextID()}
+	}
+	return &StatusPacket{Want: wantsList}
+}

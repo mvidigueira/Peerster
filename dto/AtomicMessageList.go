@@ -29,6 +29,8 @@ func (aml *AtomicMessageList) getMessage(id uint32) RumorMessage {
 func (aml *AtomicMessageList) appendMessage(msg RumorMessage) (length uint32) {
 	aml.mux.Lock()
 	defer aml.mux.Unlock()
-	aml.knownMsgs = append(aml.knownMsgs, msg)
-	return uint32(len(aml.knownMsgs))
+	if msg.ID == uint32(len(aml.knownMsgs)) {
+		aml.knownMsgs = append(aml.knownMsgs, msg)
+	}
+	return uint32(len(aml.knownMsgs) + 1)
 }

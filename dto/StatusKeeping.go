@@ -79,3 +79,8 @@ func (so *SynchronizationObject) ReleaseSendingRights(peer string, origin string
 	peerStatusMap := so.GetPeerStatusMap(peer)
 	return peerStatusMap.releaseSendRightsIfNotOutdatedForOrigin(so.ownStatusMap, origin)
 }
+
+//CreateOwnStatusPacket - for the creation of the StatusPacket structure to be sent over the net to other peers
+func (so *SynchronizationObject) CreateOwnStatusPacket() *StatusPacket {
+	return so.ownStatusMap.toStatusPacket()
+}
