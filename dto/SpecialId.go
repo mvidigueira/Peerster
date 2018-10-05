@@ -1,6 +1,8 @@
 package dto
 
-import "sync"
+import (
+	"sync"
+)
 
 //SpecialID - for limiting synchronization by origin to one thread at a time
 type SpecialID struct {
@@ -64,8 +66,10 @@ func (spID *SpecialID) acquireSendRightsIfOutdatedComparedTo(spIDNew *SpecialID)
 
 	if spID.sending == false && spIDNew.getNextID() > spID.getNextID() {
 		spID.sending = true
+		//fmt.Printf("New: %d, Old: %d, true\n", spIDNew.getNextID(), spID.getNextID())
 		return true
 	}
+	//fmt.Printf("New: %d, Old: %d, false\n", spIDNew.getNextID(), spID.getNextID())
 	return false
 }
 

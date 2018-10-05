@@ -1,9 +1,12 @@
 package dto
 
-import "sync"
+import (
+	"sync"
+)
 
 //SynchronizationObject - Object for storing rumors, statuses, and synchronizing messages with peers
 type SynchronizationObject struct {
+	seqID         *SafeCounter
 	msgs          map[string]*AtomicMessageList //key = origin
 	ownStatusMap  *AtomicStatusMap
 	peerStatusMap map[string]*AtomicStatusMap //key = peerAddress
@@ -63,9 +66,16 @@ func (so *SynchronizationObject) GetOutdatedMessageByOrigin(peerAddress, origin 
 	if !outdated {
 		return
 	}
-	aml := so.GetMessageList(rm.Origin)
+	aml := so.GetMessageList(origin)
 	rm = aml.getMessage(id)
 	return
+}
+
+//HasNewMessages - returns true if peer 'peerAdress' has a higher NextID for some origin
+func (so *SynchronizationObject) HasNewMessages(peerAddress string) (hasNew bool) {
+	peerStatusMap := so.GetPeerStatusMap(peerAddress)
+	hasNew = so.ownStatusMap.hasNewMessages(peerStatusMap)
+	return hasNew
 }
 
 //GetSendingRights - called when attempting to start synchronizing with 'peer' for messages from 'origin'
@@ -83,4 +93,10 @@ func (so *SynchronizationObject) ReleaseSendingRights(peer string, origin string
 //CreateOwnStatusPacket - for the creation of the StatusPacket structure to be sent over the net to other peers
 func (so *SynchronizationObject) CreateOwnStatusPacket() *StatusPacket {
 	return so.ownStatusMap.toStatusPacket()
+}
+
+//CreatePeerStatusPacket - for the creation of the StatusPacket structure from a status map
+func (so *SynchronizationObject) CreatePeerStatusPacket(peerAddress string) *StatusPacket {
+	peerStatusMap := so.GetPeerStatusMap(peerAddress)
+	return peerStatusMap.toStatusPacket()
 }

@@ -1,6 +1,8 @@
 package dto
 
-import "sync"
+import (
+	"sync"
+)
 
 //AtomicMessageList - RumorMessage Array protected by mutex
 type AtomicMessageList struct {
@@ -29,7 +31,7 @@ func (aml *AtomicMessageList) getMessage(id uint32) RumorMessage {
 func (aml *AtomicMessageList) appendMessage(msg RumorMessage) (length uint32) {
 	aml.mux.Lock()
 	defer aml.mux.Unlock()
-	if msg.ID == uint32(len(aml.knownMsgs)) {
+	if msg.ID == uint32(len(aml.knownMsgs)+1) {
 		aml.knownMsgs = append(aml.knownMsgs, msg)
 	}
 	return uint32(len(aml.knownMsgs) + 1)

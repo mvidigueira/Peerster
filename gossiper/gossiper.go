@@ -3,6 +3,7 @@ package gossiper
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"net"
 	"protobuf"
 	"strconv"
@@ -13,7 +14,7 @@ import (
 )
 
 const packetSize = 1024
-const debug = false
+const debug = true
 
 //Gossiper server responsible for answering client requests and rumor mongering with other gossipers
 type Gossiper struct {
@@ -59,7 +60,8 @@ func (g *Gossiper) Start() {
 	cRumor := make(chan *dto.PacketAddressPair)
 	cStatus := make(chan *dto.PacketAddressPair)
 	go g.receiveExternalUDP(cRumor, cStatus)
-	g.rumorListenRoutine(cRumor)
+	go g.rumorListenRoutine(cRumor)
+	g.statusListenRoutine(cStatus)
 }
 
 //Client Handling
@@ -70,6 +72,9 @@ func (g *Gossiper) clientListenRoutine(cUI chan *dto.PacketAddressPair) {
 		packet := g.makeGossip(pap.Packet, true)
 		if !g.UseSimple {
 			g.syncObj.AddMessage(*packet.Rumor)
+			pick := rand.Intn(len(g.peers))
+			fmt.Printf("Peer chosen: %s\n", g.peers[pick])
+			go g.synchronize(g.peers[pick], packet.Rumor.Origin)
 		} else {
 			g.sendAllPeers(packet, "")
 		}
@@ -92,8 +97,10 @@ func (g *Gossiper) rumorListenRoutine(cRumor chan *dto.PacketAddressPair) {
 		packet := g.makeGossip(pap.Packet, false)
 		if !g.UseSimple {
 			g.syncObj.AddMessage(*packet.Rumor)
-			g.acknowledge(pap.GetSenderAddress())
-			go g.synchronize(pap.GetSenderAddress(), packet.Rumor.Origin)
+			g.sendStatusPacket(pap.GetSenderAddress())
+			pick := rand.Intn(len(g.peers))
+			fmt.Printf("Peer chosen: %s\n", g.peers[pick])
+			go g.synchronize(g.peers[pick], packet.Rumor.Origin)
 		} else {
 			g.sendAllPeers(packet, pap.SenderAddress)
 		}
@@ -108,24 +115,40 @@ func (g *Gossiper) rumorListenRoutine(cRumor chan *dto.PacketAddressPair) {
 	}
 }
 
-func (g *Gossiper) statusListenRoutine(cRumor chan *dto.PacketAddressPair) {
-	//TODO: complete code
+func (g *Gossiper) statusListenRoutine(cStatus chan *dto.PacketAddressPair) {
+	for pap := range cStatus {
+		printStatusMessage(pap)
+		g.addToPeers(pap.SenderAddress)
+		peer := pap.GetSenderAddress()
+		g.syncObj.UpdateStatus(peer, *pap.Packet.Status)
+		println("Status Updated")
+		go g.synchronize(peer, pap.GetOrigin())
+	}
 }
 
 func (g *Gossiper) synchronize(peerAddress, origin string) {
-	if !g.syncObj.GetSendingRights(peerAddress, origin) {
-		return
+	if g.syncObj.GetSendingRights(peerAddress, origin) {
+		fmt.Printf("MONGERING with %v\n", peerAddress)
+		for !g.syncObj.ReleaseSendingRights(peerAddress, origin) {
+			fmt.Printf("SENDING RUMOR to %v\n", peerAddress)
+			rm, _ := g.syncObj.GetOutdatedMessageByOrigin(peerAddress, origin)
+			packet := &dto.GossipPacket{Rumor: &rm}
+			g.sendUDP(packet, peerAddress)
+			time.Sleep(15 * time.Second)
+		}
+		fmt.Printf("STOPPED MONGERING with %v\n", peerAddress)
 	}
-	for !g.syncObj.ReleaseSendingRights(peerAddress, origin) {
-		rm, _ := g.syncObj.GetOutdatedMessageByOrigin(peerAddress, origin)
-		packet := &dto.GossipPacket{Rumor: &rm}
-		g.sendUDP(packet, peerAddress)
-		time.Sleep(time.Second)
+	if g.syncObj.HasNewMessages(peerAddress) {
+		fmt.Printf("Current status: %s\n", g.syncObj.CreateOwnStatusPacket().String())
+		fmt.Printf("Their status: %s\n", g.syncObj.CreatePeerStatusPacket(peerAddress).String())
+		g.sendStatusPacket(peerAddress)
 	}
+
 }
 
-func (g *Gossiper) acknowledge(peerAddress string) {
+func (g *Gossiper) sendStatusPacket(peerAddress string) {
 	status := g.syncObj.CreateOwnStatusPacket()
+	fmt.Printf("Current status: %s\n", status.String())
 	packet := &dto.GossipPacket{Status: status}
 	g.sendUDP(packet, peerAddress)
 }
@@ -158,6 +181,7 @@ func (g *Gossiper) receiveExternalUDP(cRumor, cStatus chan *dto.PacketAddressPai
 		senderAddress := udpAddr.IP.String() + ":" + strconv.Itoa(udpAddr.Port)
 		protobuf.Decode(packetBytes, packet)
 		pap := &dto.PacketAddressPair{Packet: packet, SenderAddress: senderAddress}
+		fmt.Printf("RECEIVING BARE METAL TYPE: %s; FROM: %s\n", packet.GetUnderlyingType(), senderAddress)
 
 		switch packet.GetUnderlyingType() {
 		case "status":
@@ -182,7 +206,7 @@ func (g *Gossiper) sendUDP(packet *dto.GossipPacket, addr string) {
 	dto.LogError(err)
 	packetBytes, err := protobuf.Encode(packet)
 	dto.LogError(err)
-	fmt.Printf("MONGERING with %v\n", addr)
+	fmt.Printf("SENDING BARE METAL TYPE: %s; TO: %s\n", packet.GetUnderlyingType(), addr)
 	g.conn.WriteToUDP(packetBytes, udpAddr)
 }
 
@@ -226,7 +250,7 @@ func (g *Gossiper) makeGossip(received *dto.GossipPacket, isFromClient bool) (pa
 			Text:   received.GetContents(),
 		}
 		if isFromClient {
-			rumor.ID = g.seqID.IncrementAndGet()
+			rumor.ID = g.seqID.GetAndIncrement()
 		} else {
 			rumor.ID = received.GetSeqID()
 		}

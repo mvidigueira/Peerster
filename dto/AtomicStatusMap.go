@@ -1,6 +1,8 @@
 package dto
 
-import "sync"
+import (
+	"sync"
+)
 
 //AtomicStatusMap - vector clock for nextIDs according to origin
 type AtomicStatusMap struct {
@@ -11,6 +13,14 @@ type AtomicStatusMap struct {
 //NewAtomicStatusMap - for the creation of Atomic Status Maps
 func NewAtomicStatusMap() *AtomicStatusMap {
 	return &AtomicStatusMap{nextIDmap: make(map[string]*SpecialID), mux: sync.Mutex{}}
+}
+
+func (asm *AtomicStatusMap) lock() {
+	asm.mux.Lock()
+}
+
+func (asm *AtomicStatusMap) unlock() {
+	asm.mux.Unlock()
 }
 
 func (asm *AtomicStatusMap) getSpecialID(origin string) *SpecialID {
@@ -63,4 +73,18 @@ func (asm *AtomicStatusMap) toStatusPacket() *StatusPacket {
 		wantsList[i] = PeerStatus{Identifier: origin, NextID: spID.getNextID()}
 	}
 	return &StatusPacket{Want: wantsList}
+}
+
+//TODO: change to read/write locks
+func (asm *AtomicStatusMap) hasNewMessages(asmNew *AtomicStatusMap) (newMessages bool) {
+	asmNew.lock()
+	defer asmNew.unlock()
+
+	for origin, spIDnew := range asmNew.nextIDmap {
+		spID := asm.getSpecialID(origin)
+		if spIDnew.getNextID() > spID.getNextID() {
+			return true
+		}
+	}
+	return false
 }
