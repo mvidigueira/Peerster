@@ -28,6 +28,7 @@ type Gossiper struct {
 	peers         []string
 	seqID         *dto.SafeCounter
 	statusChanMap *dto.SafeChanMap
+	quitChanMap   *dto.QuitChanMap
 	msgMap        *dto.SafeMessagesMap
 }
 
@@ -51,12 +52,14 @@ func NewGossiper(address, name string, UIport int, peers []string, simple bool) 
 
 		seqID:         dto.NewSafeCounter(),
 		statusChanMap: dto.NewSafeChanMap(),
+		quitChanMap:   dto.NewQuitChanMap(),
 		msgMap:        dto.NewSafeMessagesMap(),
 	}
 }
 
 //Start starts the gossiper listening routines
 func (g *Gossiper) Start() {
+	rand.Seed(1) //time.Now().UnixNano()
 	cUI := make(chan *dto.PacketAddressPair)
 	go g.receiveClientUDP(cUI)
 	go g.clientListenRoutine(cUI)
@@ -65,46 +68,115 @@ func (g *Gossiper) Start() {
 	cStatus := make(chan *dto.PacketAddressPair)
 	go g.receiveExternalUDP(cRumor, cStatus)
 	go g.rumorListenRoutine(cRumor)
-	g.statusListenRoutine(cStatus)
+	go g.statusListenRoutine(cStatus)
+	g.antiEntropy()
+}
+
+func (g *Gossiper) antiEntropy() {
+	t := time.NewTicker(1 * time.Second)
+	for {
+		select {
+		case <-t.C:
+			if len(g.peers) > 0 {
+				//fmt.Printf("Anti entropy kawaii chan....................")
+				peer := g.peers[rand.Intn(len(g.peers))]
+				g.sendStatusPacket(peer)
+			}
+		}
+	}
 }
 
 func (g *Gossiper) statusListenRoutine(cStatus chan *dto.PacketAddressPair) {
 	for pap := range cStatus {
 		printStatusMessage(pap)
-		g.addToPeers(pap.SenderAddress)
 		peer := pap.GetSenderAddress()
-		go g.statusPacketReceived(peer, pap.Packet.Status)
+		g.addToPeers(peer) //fix concurrency issues here
+		g.printKnownPeers()
+
+		c, isNew := g.statusChanMap.AddListener(peer)
+		if isNew {
+			go g.peerListenRoutine(peer, c)
+		}
+		c <- pap.Packet.Status
 	}
 }
 
-func (g *Gossiper) statusPacketReceived(peer string, sp *dto.StatusPacket) {
-	g.statusChanMap.InformListeners(peer, sp)
-	for _, peerStatus := range sp.Want {
-		msg, ok := g.msgMap.GetMessage(peerStatus.Identifier, peerStatus.NextID)
-		if ok {
-			packet := &dto.GossipPacket{Rumor: msg}
-			g.stubbornSend(packet, peer)
-			return
+func (g *Gossiper) peerListenRoutine(peerAddress string, cStatus chan *dto.StatusPacket) {
+	//print("Listen routine started for " + peerAddress)
+	for {
+		select {
+		case sp := <-cStatus:
+			allStopped := g.quitChanMap.InformListeners(peerAddress, sp)
+
+			hasNewMessages := false
+			mySp := g.msgMap.GetOwnStatusPacket()
+			myExtraInfo := make([]*dto.PeerStatus, len(mySp.Want))
+			for i, ps1 := range mySp.Want {
+				myExtraInfo[i] = &dto.PeerStatus{Identifier: ps1.Identifier, NextID: 1}
+				for _, ps2 := range sp.Want { //not enough, what about origins not in the "Want" array?
+					if ps1.Identifier == ps2.Identifier {
+						if ps1.NextID > ps2.NextID {
+							myExtraInfo[i].NextID = ps2.NextID
+						} else {
+							myExtraInfo[i] = nil
+						}
+					}
+				}
+			}
+			for _, v := range myExtraInfo {
+				if v != nil {
+					//fmt.Printf("Updating %s for origin %s. Currently sending id: %d\n", peerAddress, v.Identifier, v.NextID)
+					rm, _ := g.msgMap.GetMessage(v.Identifier, v.NextID)
+					packet := &dto.GossipPacket{Rumor: rm}
+					go g.stubbornSend(packet, peerAddress)
+				}
+			}
+
+			//fmt.Printf("All stopped: %v\n", allStopped)
+			//fmt.Printf("I have new Messages: %v\n", hasNewMessages)
+			if !hasNewMessages && allStopped {
+				for _, v := range sp.Want {
+					wantedID := g.msgMap.GetNewestID(v.Identifier) + 1
+					if wantedID < v.NextID {
+						//fmt.Printf("Asking for new messages\n")
+						g.sendStatusPacket(peerAddress)
+						break
+					}
+				}
+				fmt.Printf("IN SYNC WITH %s\n", peerAddress)
+			}
 		}
 	}
-
 }
 
 func (g *Gossiper) rumorMonger(packet *dto.GossipPacket, except string) {
-	var peer string
-	rand.Seed(1) //time.Now().UnixNano()
-	for peer = g.peers[rand.Intn(len(g.peers))]; peer == except; {
-		if len(g.peers) == 1 {
-			fmt.Printf("No other friends to monger with :(")
+	exceptions := make([]string, 0)
+	if except != "" {
+		exceptions = append(exceptions, except)
+	}
+	peer, ok := g.pickRandomPeer(exceptions)
+	if !ok {
+		return
+	}
+	exceptions = append(exceptions, peer)
+	for {
+		g.stubbornSend(packet, peer)
+
+		if rand.Intn(2) == 0 {
 			return
 		}
-	}
 
-	g.stubbornSend(packet, peer)
+		peer, ok = g.pickRandomPeer(exceptions)
+		if !ok {
+			return
+		}
+		fmt.Printf("FLIPPED COIN sending rumor to %s\n", peer)
+		exceptions = append(exceptions, peer)
+	}
 }
 
 func (g *Gossiper) stubbornSend(packet *dto.GossipPacket, peer string) {
-	cStatus, alreadySending := g.statusChanMap.AddListener(peer, packet.GetSeqID())
+	quit, alreadySending := g.quitChanMap.AddListener(peer, packet.GetOrigin(), packet.GetSeqID())
 	if alreadySending {
 		return
 	}
@@ -117,13 +189,9 @@ func (g *Gossiper) stubbornSend(packet *dto.GossipPacket, peer string) {
 		case <-t.C:
 			fmt.Printf("MONGERING WITH %s\n", peer)
 			g.sendUDP(packet, peer)
-		case status := <-cStatus:
-			for _, v := range status.Want {
-				if v.Identifier == packet.GetOrigin() && v.NextID > packet.GetSeqID() {
-					t.Stop()
-					return
-				}
-			}
+		case <-quit:
+			t.Stop()
+			return
 		}
 	}
 }
@@ -175,6 +243,7 @@ func (g *Gossiper) rumorListenRoutine(cRumor chan *dto.PacketAddressPair) {
 }
 
 func (g *Gossiper) sendStatusPacket(peerAddress string) {
+	//fmt.Printf("Sending status packet to peer: %s\n", peerAddress)
 	status := g.msgMap.GetOwnStatusPacket()
 	packet := &dto.GossipPacket{Status: status}
 	g.sendUDP(packet, peerAddress)
@@ -210,7 +279,7 @@ func (g *Gossiper) receiveExternalUDP(cRumor, cStatus chan *dto.PacketAddressPai
 
 		pap := &dto.PacketAddressPair{Packet: packet, SenderAddress: senderAddress}
 		if err != nil {
-			log.Print("Protobuf decoding error\n")
+			//log.Print("Protobuf decoding error\n")
 		}
 		switch packet.GetUnderlyingType() {
 		case "status":
@@ -291,12 +360,59 @@ func (g *Gossiper) makeGossip(received *dto.GossipPacket, isFromClient bool) (pa
 //PS: HAS CONCURRENCY ISSUES, needs mutex at least if to be kept
 //when STATUS messages are implemented, use the necessary map and trash the current "peers" array
 //so use the corresponding search method. Current O(N) complexity is very bad:
-func (g *Gossiper) addToPeers(peerAddr string) {
+func (g *Gossiper) addToPeers(peerAddr string) bool {
 	for _, v := range g.peers {
 		if peerAddr == v {
-			return
+			return false
 		}
 	}
 	g.peers = append(g.peers, peerAddr)
+	return true
+}
+
+/*
+	g.statusChanMap.InformListeners(peer, sp)
+	for _, peerStatus := range sp.Want {
+		msg, ok := g.msgMap.GetMessage(peerStatus.Identifier, peerStatus.NextID)
+		if ok {
+			packet := &dto.GossipPacket{Rumor: msg}
+			g.stubbornSend(packet, peer)
+			return
+		}
+	}
+*/
+
+/*
+for _, v := range sp.Want { //not enough, what about origins not in the "Want" array?
+				id := g.msgMap.GetNewestID(v.Identifier)
+				if id >= v.NextID {
+					fmt.Printf("Updating %s for origin %s. Currently sending id: %d\n", peerAddress, v.Identifier, v.NextID)
+					rm, _ := g.msgMap.GetMessage(v.Identifier, v.NextID)
+					packet := &dto.GossipPacket{Rumor: rm}
+					go g.stubbornSend(packet, peerAddress)
+					hasNewMessages = true
+				}
+			}
+*/
+func (g *Gossiper) pickRandomPeer(exceptions []string) (string, bool) {
+	possiblePicks := g.GetPeersExcept(exceptions)
+	if len(possiblePicks) == 0 {
+		return "", false
+	}
+	peer := possiblePicks[rand.Intn(len(possiblePicks))]
+	return peer, true
+}
+
+func (g *Gossiper) GetPeersExcept(exceptions []string) (dif []string) {
+	m := map[string]bool{}
+	for _, v := range exceptions {
+		m[v] = true
+	}
+	dif = []string{}
+	for _, v := range g.peers {
+		if _, ok := m[v]; !ok {
+			dif = append(dif, v)
+		}
+	}
 	return
 }

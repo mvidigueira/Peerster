@@ -13,10 +13,19 @@ func NewSafeChanMap() *SafeChanMap {
 	return &SafeChanMap{peersMap: sync.Map{}}
 }
 
-func (scm *SafeChanMap) AddPeer(peerAddress string) {
-	scm.peersMap.Store(peerAddress, sync.Map{})
+func (scm *SafeChanMap) AddListener(peerAddress string) (chan *StatusPacket, bool) {
+	cStatus := make(chan *StatusPacket)
+	c, loaded := scm.peersMap.LoadOrStore(peerAddress, cStatus)
+
+	return c.(chan *StatusPacket), !loaded
 }
 
+func (scm *SafeChanMap) GetListener(peerAddress string) (chan *StatusPacket, bool) {
+	c, ok := scm.peersMap.Load(peerAddress)
+	return c.(chan *StatusPacket), ok
+}
+
+/*
 func (scm *SafeChanMap) AddListener(peerAddress string, messageId uint32) (chan *StatusPacket, bool) {
 	cStatus := make(chan *StatusPacket)
 	pmi, _ := scm.peersMap.LoadOrStore(peerAddress, &sync.Map{})
@@ -25,7 +34,8 @@ func (scm *SafeChanMap) AddListener(peerAddress string, messageId uint32) (chan 
 
 	return cStatus, loaded
 }
-
+*/
+/*
 func (scm *SafeChanMap) RemoveListener(peerAddress string, messageId uint32) {
 	pmi, _ := scm.peersMap.LoadOrStore(peerAddress, &sync.Map{})
 	pm := pmi.(*sync.Map)
@@ -46,6 +56,7 @@ func (scm *SafeChanMap) InformListeners(peerAddress string, sp *StatusPacket) {
 
 	pm.Range(statusInserter)
 }
+*/
 
 //func (scm *SafeChanMap)
 

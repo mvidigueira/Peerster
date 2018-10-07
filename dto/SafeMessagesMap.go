@@ -19,9 +19,14 @@ func (scm *SafeMessagesMap) AddOrigin(origin string) {
 func (scm *SafeMessagesMap) AddMessage(msg *RumorMessage) bool {
 	pmi, _ := scm.peersMap.LoadOrStore(msg.Origin, &sync.Map{})
 	pm := pmi.(*sync.Map)
-	_, wasLoaded := pm.LoadOrStore(msg.ID, msg)
+	var notNew bool
+	if msg.ID == 1 {
+		_, notNew = pm.LoadOrStore(msg.ID, msg)
+	} else if _, isLoad := pm.Load(msg.ID - 1); isLoad {
+		_, notNew = pm.LoadOrStore(msg.ID, msg)
+	}
 
-	return wasLoaded
+	return notNew
 }
 
 func (scm *SafeMessagesMap) GetMessage(origin string, messageId uint32) (*RumorMessage, bool) {
@@ -34,12 +39,29 @@ func (scm *SafeMessagesMap) GetMessage(origin string, messageId uint32) (*RumorM
 	return msg.(*RumorMessage), ok
 }
 
+func (scm *SafeMessagesMap) GetNewestID(origin string) uint32 {
+	pmi, _ := scm.peersMap.LoadOrStore(origin, &sync.Map{})
+	pm := pmi.(*sync.Map)
+
+	maxID := uint32(1)
+	idCounter := func(idI interface{}, rmI interface{}) bool {
+		id := idI.(uint32)
+		if id > maxID {
+			maxID = id
+		}
+		return true
+	}
+	pm.Range(idCounter)
+
+	return maxID
+}
+
 func (scm *SafeMessagesMap) GetOwnStatusPacket() *StatusPacket {
 	wants := make([]PeerStatus, 0)
 	wantInserter := func(originI interface{}, rmI interface{}) bool {
 		origin := originI.(string)
 		rm := rmI.(*sync.Map)
-		maxID := uint32(1)
+		maxID := uint32(0)
 		idCounter := func(idI interface{}, rmI interface{}) bool {
 			id := idI.(uint32)
 			if id > maxID {
