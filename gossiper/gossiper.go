@@ -59,7 +59,7 @@ func NewGossiper(address, name string, UIport int, peers []string, simple bool) 
 
 //Start starts the gossiper listening routines
 func (g *Gossiper) Start() {
-	rand.Seed(1) //time.Now().UnixNano()
+	rand.Seed(2) //time.Now().UnixNano()
 	cUI := make(chan *dto.PacketAddressPair)
 	go g.receiveClientUDP(cUI)
 	go g.clientListenRoutine(cUI)
@@ -162,7 +162,7 @@ func (g *Gossiper) rumorMonger(packet *dto.GossipPacket, except string) {
 	for {
 		g.stubbornSend(packet, peer)
 
-		if rand.Intn(2) == 0 {
+		if rand.Intn(2) == 1 {
 			return
 		}
 
@@ -171,7 +171,7 @@ func (g *Gossiper) rumorMonger(packet *dto.GossipPacket, except string) {
 			return
 		}
 		fmt.Printf("FLIPPED COIN sending rumor to %s\n", peer)
-		exceptions = append(exceptions, peer)
+		//exceptions = append(exceptions, peer) 								//TODO: uncomment this later after talking to TAs
 	}
 }
 
@@ -181,13 +181,13 @@ func (g *Gossiper) stubbornSend(packet *dto.GossipPacket, peer string) {
 		return
 	}
 
-	fmt.Printf("MONGERING WITH %s\n", peer)
+	fmt.Printf("MONGERING with %s\n", peer)
 	g.sendUDP(packet, peer)
 	t := time.NewTicker(1 * time.Second)
 	for {
 		select {
 		case <-t.C:
-			fmt.Printf("MONGERING WITH %s\n", peer)
+			fmt.Printf("MONGERING with %s\n", peer)
 			g.sendUDP(packet, peer)
 		case <-quit:
 			t.Stop()
@@ -229,7 +229,7 @@ func (g *Gossiper) rumorListenRoutine(cRumor chan *dto.PacketAddressPair) {
 			sender := pap.GetSenderAddress()
 			g.sendStatusPacket(sender)
 			if isNew {
-				go g.rumorMonger(packet, sender)
+				go g.rumorMonger(packet, "") //TODO: change "" this back to sender after talking with TAs
 			}
 		} else {
 			g.sendAllPeers(packet, pap.SenderAddress)
