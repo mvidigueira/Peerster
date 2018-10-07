@@ -54,6 +54,9 @@ type PeerStatus struct {
 }
 
 func (sp *StatusPacket) String() string {
+	if sp == nil {
+		return "nil"
+	}
 	str := ""
 	for _, v := range sp.Want {
 		str = str + fmt.Sprintf("peer %s nextID %d ", v.Identifier, v.NextID)
@@ -157,4 +160,16 @@ type GossipPacketError struct {
 func (e *GossipPacketError) Error() string {
 	return fmt.Sprintf("at %v, %s",
 		e.When, e.What)
+}
+
+func (gp GossipPacket) String() string {
+	return fmt.Sprintf("GossipPacket printing\nRumor: %s\nStatus: %s\n", gp.Rumor, gp.Status)
+}
+
+func (rm *RumorMessage) String() string {
+	if rm == nil {
+		return "nil"
+	}
+	str := fmt.Sprintf("id: %d, origin: %s", rm.ID, rm.Origin)
+	return str
 }
