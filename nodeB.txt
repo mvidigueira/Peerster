@@ -1,4 +1,0 @@
-RUMOR origin nodeA from 127.0.0.1:5000 ID 1 contents bananas
-PEERS 127.0.0.1:5002,127.0.0.1:5000
-MONGERING WITH 127.0.0.1:5002
-STATUS from 127.0.0.1:5002 peer nodeA nextID 2 
