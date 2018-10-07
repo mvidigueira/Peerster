@@ -1,7 +1,6 @@
 package dto
 
 import (
-	"fmt"
 	"sync"
 )
 
@@ -13,56 +12,9 @@ func NewSafeChanMap() *SafeChanMap {
 	return &SafeChanMap{peersMap: sync.Map{}}
 }
 
-func (scm *SafeChanMap) AddListener(peerAddress string) (chan *StatusPacket, bool) {
+func (scm *SafeChanMap) AddOrGetPeerStatusListener(peerAddress string) (chan *StatusPacket, bool) {
 	cStatus := make(chan *StatusPacket)
 	c, loaded := scm.peersMap.LoadOrStore(peerAddress, cStatus)
 
 	return c.(chan *StatusPacket), !loaded
-}
-
-func (scm *SafeChanMap) GetListener(peerAddress string) (chan *StatusPacket, bool) {
-	c, ok := scm.peersMap.Load(peerAddress)
-	return c.(chan *StatusPacket), ok
-}
-
-/*
-func (scm *SafeChanMap) AddListener(peerAddress string, messageId uint32) (chan *StatusPacket, bool) {
-	cStatus := make(chan *StatusPacket)
-	pmi, _ := scm.peersMap.LoadOrStore(peerAddress, &sync.Map{})
-	pm := pmi.(*sync.Map)
-	_, loaded := pm.LoadOrStore(messageId, cStatus)
-
-	return cStatus, loaded
-}
-*/
-/*
-func (scm *SafeChanMap) RemoveListener(peerAddress string, messageId uint32) {
-	pmi, _ := scm.peersMap.LoadOrStore(peerAddress, &sync.Map{})
-	pm := pmi.(*sync.Map)
-	pm.Delete(messageId)
-
-	return
-}
-
-func (scm *SafeChanMap) InformListeners(peerAddress string, sp *StatusPacket) {
-	pmi, _ := scm.peersMap.LoadOrStore(peerAddress, &sync.Map{})
-	pm := pmi.(*sync.Map)
-
-	statusInserter := func(idI interface{}, cStatusI interface{}) bool {
-		cStatus := cStatusI.(chan *StatusPacket)
-		cStatus <- sp
-		return true
-	}
-
-	pm.Range(statusInserter)
-}
-*/
-
-//func (scm *SafeChanMap)
-
-func (sp *StatusPacket) Print() {
-	fmt.Println("-- Printing Status Packet --")
-	for _, v := range sp.Want {
-		fmt.Printf("Identifier: %s, Next ID: %d\n", v.Identifier, v.NextID)
-	}
 }

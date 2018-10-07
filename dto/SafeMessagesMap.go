@@ -16,7 +16,7 @@ func (scm *SafeMessagesMap) AddOrigin(origin string) {
 	scm.peersMap.Store(origin, sync.Map{})
 }
 
-func (scm *SafeMessagesMap) AddMessage(msg *RumorMessage) bool {
+func (scm *SafeMessagesMap) AddMessage(msg *RumorMessage) (isNew bool) {
 	pmi, _ := scm.peersMap.LoadOrStore(msg.Origin, &sync.Map{})
 	pm := pmi.(*sync.Map)
 	var notNew bool
@@ -26,7 +26,7 @@ func (scm *SafeMessagesMap) AddMessage(msg *RumorMessage) bool {
 		_, notNew = pm.LoadOrStore(msg.ID, msg)
 	}
 
-	return notNew
+	return !notNew
 }
 
 func (scm *SafeMessagesMap) GetMessage(origin string, messageId uint32) (*RumorMessage, bool) {

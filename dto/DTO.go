@@ -162,8 +162,8 @@ func (e *GossipPacketError) Error() string {
 		e.When, e.What)
 }
 
-func (gp GossipPacket) String() string {
-	return fmt.Sprintf("GossipPacket printing\nRumor: %s\nStatus: %s\n", gp.Rumor, gp.Status)
+func (g GossipPacket) String() string {
+	return fmt.Sprintf("GossipPacket printing\nRumor: %s\nStatus: %s\n", g.Rumor, g.Status)
 }
 
 func (rm *RumorMessage) String() string {
@@ -172,4 +172,11 @@ func (rm *RumorMessage) String() string {
 	}
 	str := fmt.Sprintf("id: %d, origin: %s", rm.ID, rm.Origin)
 	return str
+}
+
+func (sp *StatusPacket) Print() {
+	fmt.Println("-- Printing Status Packet --")
+	for _, v := range sp.Want {
+		fmt.Printf("Identifier: %s, Next ID: %d\n", v.Identifier, v.NextID)
+	}
 }
