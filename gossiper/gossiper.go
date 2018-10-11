@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"net"
 	"protobuf"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -30,6 +31,36 @@ type Gossiper struct {
 	statusChanMap *dto.SafeChanMap
 	quitChanMap   *dto.QuitChanMap
 	msgMap        *dto.SafeMessagesMap
+
+	latestMessages *dto.SafeMessageArray
+}
+
+func (g *Gossiper) GetName() string {
+	return g.name
+}
+
+func (g *Gossiper) GetLatestMessagesList() []dto.RumorMessage {
+	return g.latestMessages.GetArrayCopyAndDelete()
+}
+
+func (g *Gossiper) GetMessageList() []dto.RumorMessage {
+	msgs := g.msgMap.GetAllMessages()
+	sort.Slice(msgs, func(i, j int) bool {
+		if msgs[i].Origin == msgs[j].Origin {
+			return msgs[i].ID < msgs[j].ID
+		} else {
+			return msgs[i].Origin < msgs[j].Origin
+		}
+	})
+	return msgs
+}
+
+func (g *Gossiper) GetPeersList() []string {
+	return g.peers.GetArrayCopy()
+}
+
+func (g *Gossiper) AddPeer(peerAdress string) {
+	g.addToPeers(peerAdress)
 }
 
 //NewGossiper creates a new gossiper
@@ -54,12 +85,14 @@ func NewGossiper(address, name string, UIport int, peers []string, simple bool) 
 		statusChanMap: dto.NewSafeChanMap(),
 		quitChanMap:   dto.NewQuitChanMap(),
 		msgMap:        dto.NewSafeMessagesMap(),
+
+		latestMessages: dto.NewSafeMessageArray(),
 	}
 }
 
 //Start starts the gossiper listening routines
 func (g *Gossiper) Start() {
-	rand.Seed(time.Now().UnixNano())
+	rand.Seed(2) //time.Now().UnixNano()
 	cUI := make(chan *dto.PacketAddressPair)
 	go g.receiveClientUDP(cUI)
 	go g.clientListenRoutine(cUI)
@@ -108,8 +141,7 @@ func (g *Gossiper) peerStatusListenRoutine(peerAddress string, cStatus chan *dto
 
 			mySp := g.msgMap.GetOwnStatusPacket()
 			theirDesiredMsgs := peerStatusDifference(mySp.Want, sp.Want)
-			mySp.Print()
-			sp.Print()
+
 			(&dto.StatusPacket{Want: theirDesiredMsgs}).Print()
 			for _, v := range theirDesiredMsgs {
 				rm, _ := g.msgMap.GetMessage(v.Identifier, v.NextID)
@@ -179,17 +211,29 @@ func (g *Gossiper) stubbornSend(packet *dto.GossipPacket, peer string) {
 //Client Handling
 func (g *Gossiper) clientListenRoutine(cUI chan *dto.PacketAddressPair) {
 	for pap := range cUI {
+		v := g.msgMap.GetNewestID(g.name) //crashed and recovered
+		g.seqID.SwapIfLess(v + 1)         //crashed and recovered
+
 		printClientMessage(pap)
 		g.printKnownPeers()
 
 		packet := g.makeGossip(pap.Packet, true)
 		if !g.UseSimple {
-			g.msgMap.AddMessage(packet.Rumor)
+			g.AddMessage(packet.Rumor)
 			go g.rumorMonger(packet, "")
 		} else {
 			g.sendAllPeers(packet, "")
 		}
 	}
+}
+
+func (g *Gossiper) AddMessage(rm *dto.RumorMessage) bool {
+	isNew := g.msgMap.AddMessage(rm)
+	fmt.Printf("Origin: %s, Id:%d, isNew:%v\n", rm.Origin, rm.ID, isNew)
+	if isNew {
+		g.latestMessages.AppendToArray(*rm)
+	}
+	return isNew
 }
 
 //Peer handling
@@ -202,7 +246,7 @@ func (g *Gossiper) rumorListenRoutine(cRumor chan *dto.PacketAddressPair) {
 
 		packet := g.makeGossip(pap.Packet, false)
 		if !g.UseSimple {
-			isNew := g.msgMap.AddMessage(packet.Rumor)
+			isNew := g.AddMessage(packet.Rumor)
 			g.sendStatusPacket(pap.GetSenderAddress())
 			if isNew {
 				go g.rumorMonger(packet, "") //TODO: change "" this back to sender after talking with TAs
@@ -257,7 +301,7 @@ func (g *Gossiper) receiveExternalUDP(cRumor, cStatus chan *dto.PacketAddressPai
 
 //SENDING
 func (g *Gossiper) sendAllPeers(packet *dto.GossipPacket, exception string) {
-	for _, v := range stringArrayDifference(g.peers.GetArrayCopy(), []string{exception}) {
+	for _, v := range StringArrayDifference(g.peers.GetArrayCopy(), []string{exception}) {
 		g.sendUDP(packet, v)
 	}
 }
@@ -296,7 +340,7 @@ func (g *Gossiper) makeGossip(received *dto.GossipPacket, isFromClient bool) (pa
 }
 
 func (g *Gossiper) pickRandomPeer(exceptions []string) (string, bool) {
-	possiblePicks := stringArrayDifference(g.peers.GetArrayCopy(), exceptions)
+	possiblePicks := StringArrayDifference(g.peers.GetArrayCopy(), exceptions)
 	if len(possiblePicks) == 0 {
 		return "", false
 	}
@@ -354,7 +398,7 @@ func peerStatusDifference(have []dto.PeerStatus, want []dto.PeerStatus) []dto.Pe
 }
 
 //Complexity: Assuming Go maps are ~O(1), complexity is ~O(N)
-func stringArrayDifference(first []string, second []string) (difference []string) {
+func StringArrayDifference(first []string, second []string) (difference []string) {
 	mSecond := make(map[string]bool)
 	for _, key := range second {
 		mSecond[key] = true

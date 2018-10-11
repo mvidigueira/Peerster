@@ -16,8 +16,17 @@ func NewSafeCounter() *SafeCounter {
 //GetAndIncrement - atomically increments and returns the value stored
 func (sc *SafeCounter) GetAndIncrement() (v uint32) {
 	sc.mux.Lock()
+	defer sc.mux.Unlock()
 	v = sc.v
 	sc.v++
-	sc.mux.Unlock()
 	return
+}
+
+//SwapIfLess - atomically set new value if old < new
+func (sc *SafeCounter) SwapIfLess(new uint32) {
+	sc.mux.Lock()
+	defer sc.mux.Unlock()
+	if sc.v < new {
+		sc.v = new
+	}
 }

@@ -45,3 +45,7 @@ func (c *Client) sendUDP() {
 	dto.LogError(err)
 	c.conn.WriteToUDP(packetBytes, c.udpAddrGossiper)
 }
+
+func (c *Client) close() {
+	c.conn.Close()
+}

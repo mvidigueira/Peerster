@@ -1,11 +1,20 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
+	"net"
+	"net/http"
+	"protobuf"
+	"strconv"
 	"strings"
 
+	"github.com/mvidigueira/Peerster/dto"
 	"github.com/mvidigueira/Peerster/gossiper"
 )
+
+var g *gossiper.Gossiper
+var uiport int
 
 func main() {
 	UIPort := flag.Int("UIPort", 8080, "Port for the UI client (default \"8080\")")
@@ -16,11 +25,93 @@ func main() {
 
 	flag.Parse()
 
+	uiport = *UIPort
 	peers := make([]string, 0)
 	if *peersStr != "" {
 		peers = strings.Split(*peersStr, ",")
 	}
-	g := gossiper.NewGossiper(*gossipAddr, *name, *UIPort, peers, *simple)
+	g = gossiper.NewGossiper(*gossipAddr, *name, *UIPort, peers, *simple)
 
-	g.Start()
+	go g.Start()
+
+	http.Handle("/", http.FileServer(http.Dir("./frontend")))
+	http.HandleFunc("/message", messageHandler)
+	http.HandleFunc("/node", nodeHandler)
+	http.HandleFunc("/id", idHandler)
+	http.ListenAndServe("localhost:"+strconv.Itoa(*UIPort), nil)
+}
+
+func messageHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "GET" {
+		testJSON, err := json.Marshal(g.GetLatestMessagesList())
+		if err != nil {
+			panic(err)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(testJSON)
+	} else if r.Method == "POST" {
+		println("post received")
+		err := r.ParseForm()
+		if err != nil {
+			panic(err)
+		}
+		message := r.PostForm.Get("message")
+		sendUDP(message)
+	}
+}
+
+type JsonPeer struct {
+	Name string
+}
+
+func nodeHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "GET" {
+		peers := g.GetPeersList()
+
+		jsonPeersList := make([]JsonPeer, len(peers))
+		for i, v := range peers {
+			jsonPeersList[i] = JsonPeer{Name: v}
+		}
+		testJson, err := json.Marshal(jsonPeersList)
+		if err != nil {
+			panic(err)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(testJson)
+	} else if r.Method == "POST" {
+		err := r.ParseForm()
+		if err != nil {
+			panic(err)
+		}
+		node := r.PostFormValue("peer")
+		println(node)
+		g.AddPeer(node)
+	}
+}
+
+func idHandler(w http.ResponseWriter, r *http.Request) {
+	testJSON, err := json.Marshal(g.GetName())
+	if err != nil {
+		panic(err)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(testJSON)
+}
+
+func sendUDP(text string) {
+	addr, _ := net.ResolveUDPAddr("udp4", "localhost:5500")
+	addrGossiper, _ := net.ResolveUDPAddr("udp4", "localhost:"+strconv.Itoa(uiport))
+	conn, _ := net.ListenUDP("udp4", addr)
+	msg := &dto.SimpleMessage{Contents: text}
+	packet := &dto.GossipPacket{Simple: msg}
+	packetBytes, _ := protobuf.Encode(packet)
+
+	conn.WriteToUDP(packetBytes, addrGossiper)
+	conn.Close()
 }

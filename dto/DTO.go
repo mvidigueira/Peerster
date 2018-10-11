@@ -175,7 +175,6 @@ func (rm *RumorMessage) String() string {
 }
 
 func (sp *StatusPacket) Print() {
-	fmt.Println("-- Printing Status Packet --")
 	for _, v := range sp.Want {
 		fmt.Printf("Identifier: %s, Next ID: %d\n", v.Identifier, v.NextID)
 	}

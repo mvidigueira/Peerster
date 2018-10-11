@@ -5,19 +5,19 @@ import (
 )
 
 type SafeMessagesMap struct {
-	peersMap sync.Map
+	originsMap sync.Map
 }
 
 func NewSafeMessagesMap() *SafeMessagesMap {
-	return &SafeMessagesMap{peersMap: sync.Map{}}
+	return &SafeMessagesMap{originsMap: sync.Map{}}
 }
 
 func (scm *SafeMessagesMap) AddOrigin(origin string) {
-	scm.peersMap.Store(origin, sync.Map{})
+	scm.originsMap.Store(origin, sync.Map{})
 }
 
 func (scm *SafeMessagesMap) AddMessage(msg *RumorMessage) (isNew bool) {
-	pmi, _ := scm.peersMap.LoadOrStore(msg.Origin, &sync.Map{})
+	pmi, _ := scm.originsMap.LoadOrStore(msg.Origin, &sync.Map{})
 	pm := pmi.(*sync.Map)
 	var notNew bool
 	if msg.ID == 1 {
@@ -30,7 +30,7 @@ func (scm *SafeMessagesMap) AddMessage(msg *RumorMessage) (isNew bool) {
 }
 
 func (scm *SafeMessagesMap) GetMessage(origin string, messageId uint32) (*RumorMessage, bool) {
-	pmi, _ := scm.peersMap.LoadOrStore(origin, &sync.Map{})
+	pmi, _ := scm.originsMap.LoadOrStore(origin, &sync.Map{})
 	pm := pmi.(*sync.Map)
 	msg, ok := pm.Load(messageId)
 	if !ok {
@@ -40,7 +40,7 @@ func (scm *SafeMessagesMap) GetMessage(origin string, messageId uint32) (*RumorM
 }
 
 func (scm *SafeMessagesMap) GetNewestID(origin string) uint32 {
-	pmi, _ := scm.peersMap.LoadOrStore(origin, &sync.Map{})
+	pmi, _ := scm.originsMap.LoadOrStore(origin, &sync.Map{})
 	pm := pmi.(*sync.Map)
 
 	maxID := uint32(1)
@@ -73,6 +73,26 @@ func (scm *SafeMessagesMap) GetOwnStatusPacket() *StatusPacket {
 		wants = append(wants, PeerStatus{Identifier: origin, NextID: maxID + 1})
 		return true
 	}
-	scm.peersMap.Range(wantInserter)
+	scm.originsMap.Range(wantInserter)
 	return &StatusPacket{Want: wants}
+}
+
+func (scm *SafeMessagesMap) GetAllMessages() []RumorMessage {
+	msgList := make([]RumorMessage, 0)
+
+	perOriginAppender := func(originI interface{}, rmI interface{}) bool {
+		rm := rmI.(*sync.Map)
+
+		perIdAppender := func(idI interface{}, msgI interface{}) bool {
+			msg := msgI.(*RumorMessage)
+			msgList = append(msgList, *msg)
+			return true
+		}
+		rm.Range(perIdAppender)
+
+		return true
+	}
+	scm.originsMap.Range(perOriginAppender)
+
+	return msgList
 }

@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css" integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous">
+    <style>
+            .jumbotron{
+                background-color:#2E2D88;
+                color:white;
+            }
+            /* Adds borders for tabs */
+            .tab-content {
+                border-left: 1px solid #ddd;
+                border-right: 1px solid #ddd;
+                border-bottom: 1px solid #ddd;
+                padding: 10px;
+            }
+            .nav-tabs {
+                margin-bottom: 0;
+            }
+            .table-wrapper-scroll-y {
+                display: block;
+                max-height: 400px;
+                overflow-y: auto;
+                -ms-overflow-style: -ms-autohiding-scrollbar;
+            }
+    </style>
+
+<script src="https://code.jquery.com/jquery-3.3.1.min.js" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.3/umd/popper.min.js" integrity="sha384-ZMP7rVo3mIykV+2+9J3UJ46jBk0WLaUAdn689aCwoqbBJiSnjAK/l8WvCWPIPm49" crossorigin="anonymous"></script>
+<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js" integrity="sha384-ChfqqxuZUCnJSK3+MXmPNIyE6ZbWh2IMqE241rYiqJxyMiZ6OW/JmZQ5stwEULTy" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-table/1.12.1/bootstrap-table.min.js"></script>
+<script>
+    var peerCount = 0;
+    loadTables()
+    console.log("exist")
+    
+    $(document).ready(function() {
+        $('#msgForm').on('submit', function(e) {
+            e.preventDefault();
+            var text = $("textarea#messageText").val();
+
+            $.ajax({
+                type: $(this).attr('method'),
+                url: $(this).attr('action'),
+                data: {message:text},
+            });
+        });
+
+        $('#nodeForm').on('submit', function(e) {
+            e.preventDefault();
+            var addr = $("input#peerAdress").val();
+
+            $.ajax({
+                type: $(this).attr('method'),
+                url: $(this).attr('action'),
+                data: {peer:addr},
+            });
+
+        });
+    });
+
+    function getData() {
+        return false
+    }
+    function loadTables() {
+        $.getJSON("/message", function(d, status) {
+            sessionStorage.setItem("msgs", JSON.stringify(d))
+            $('#msgTable').bootstrapTable({
+                data: d
+            });
+        });
+
+        $.getJSON("/node", function(d, status){
+            $('#peerTable').bootstrapTable({
+                data: d
+            });
+            peerCount = d.length
+        });
+
+        $.getJSON("/id", function(d, status){
+            console.log(d)
+            $('#nodeName').html("Peerster Client User Interface - " + d);
+        });
+    }
+    
+    window.setInterval(function() {
+        $.getJSON("/message", function(d, status){
+            console.log(d.length)
+            if(d.length > 0) {
+                $('#msgTable').bootstrapTable("append", d)
+            }
+        });
+
+        $.getJSON("/node", function(d, status){
+            if(d.length > peerCount) {
+                peerCount = d.length
+                $('#peerTable').bootstrapTable("refresh", d)
+            }
+        });
+    }, 1000);
+</script>
+
+
+  </head>
+  <body>
+
+    <div class="container" >
+        <div class="page-header">
+            <h1 id="nodeName" class="text-center">Peerster Client User Interface</h1>
+        </div>
+        <div class="row">
+            <div class="col-md-9">
+                <h3>Message List</h3>
+                <div class="table-wrapper-scroll-y" >
+                    <table id="msgTable" data-url='/message'>
+                            <thead>
+                                <tr>
+                                    <th data-field="Origin">Origin</th>
+                                    <th data-field="ID">ID</th>
+                                    <th data-field="Text">Text</th>
+                                </tr>
+                            </thead>
+                    </table>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <h3>Peers List</h3>
+                <div class="table-wrapper-scroll-y">
+                    <table id="peerTable" data-url='/node'>
+                            <thead>
+                                <tr>
+                                    <th data-field="Name">Peer Address</th>
+                                </tr>
+                            </thead>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <form id="nodeForm" action="/node" method="POST">
+            <label for="peerAdress">New peer adress</label>
+            <div class="row">
+                <div class="col-md-5">
+                    <div class="form-group">
+                        <input type="text" class="form-control" id="peerAdress" placeholder="127.0.0.1:10000">
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary">Add</button>
+                </div>
+            </div>
+        </form>
+        <form id="msgForm" action="/message" method="POST">
+            <label for="messageArea">New message:</label>
+            <div class="row">
+                <div class="col-md-8">
+                    <div class="form-group">
+                        <textarea class="form-control" id="messageText" rows="1"></textarea>
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary">Send</button>
+                </div>
+            </div>
+        </form>
+        
+    </div>
+    
+
+    </body>
+    
+</html>
+
