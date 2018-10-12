@@ -6,7 +6,6 @@ import (
 	"math/rand"
 	"net"
 	"protobuf"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -41,18 +40,6 @@ func (g *Gossiper) GetName() string {
 
 func (g *Gossiper) GetLatestMessagesList() []dto.RumorMessage {
 	return g.latestMessages.GetArrayCopyAndDelete()
-}
-
-func (g *Gossiper) GetMessageList() []dto.RumorMessage {
-	msgs := g.msgMap.GetAllMessages()
-	sort.Slice(msgs, func(i, j int) bool {
-		if msgs[i].Origin == msgs[j].Origin {
-			return msgs[i].ID < msgs[j].ID
-		} else {
-			return msgs[i].Origin < msgs[j].Origin
-		}
-	})
-	return msgs
 }
 
 func (g *Gossiper) GetPeersList() []string {
@@ -142,7 +129,7 @@ func (g *Gossiper) peerStatusListenRoutine(peerAddress string, cStatus chan *dto
 			mySp := g.msgMap.GetOwnStatusPacket()
 			theirDesiredMsgs := peerStatusDifference(mySp.Want, sp.Want)
 
-			(&dto.StatusPacket{Want: theirDesiredMsgs}).Print()
+			//fmt.Println((&dto.StatusPacket{Want: theirDesiredMsgs}))
 			for _, v := range theirDesiredMsgs {
 				rm, _ := g.msgMap.GetMessage(v.Identifier, v.NextID)
 				packet := &dto.GossipPacket{Rumor: rm}
@@ -211,9 +198,6 @@ func (g *Gossiper) stubbornSend(packet *dto.GossipPacket, peer string) {
 //Client Handling
 func (g *Gossiper) clientListenRoutine(cUI chan *dto.PacketAddressPair) {
 	for pap := range cUI {
-		v := g.msgMap.GetNewestID(g.name) //crashed and recovered
-		g.seqID.SwapIfLess(v + 1)         //crashed and recovered
-
 		printClientMessage(pap)
 		g.printKnownPeers()
 
@@ -229,7 +213,7 @@ func (g *Gossiper) clientListenRoutine(cUI chan *dto.PacketAddressPair) {
 
 func (g *Gossiper) AddMessage(rm *dto.RumorMessage) bool {
 	isNew := g.msgMap.AddMessage(rm)
-	fmt.Printf("Origin: %s, Id:%d, isNew:%v\n", rm.Origin, rm.ID, isNew)
+	//fmt.Printf("Origin: %s, Id:%d, isNew:%v\n", rm.Origin, rm.ID, isNew)
 	if isNew {
 		g.latestMessages.AppendToArray(*rm)
 	}
@@ -372,7 +356,7 @@ func printGossiperMessage(pair *dto.PacketAddressPair) {
 			pair.GetOrigin(), pair.GetSenderAddress(), pair.GetContents())
 	case "rumor":
 		fmt.Printf("RUMOR origin %v from %v ID %v contents %v\n",
-			pair.GetOrigin(), pair.GetSenderAddress(), pair.Packet.Rumor.ID, pair.GetContents())
+			pair.GetOrigin(), pair.GetSenderAddress(), pair.GetSeqID(), pair.GetContents())
 	}
 }
 

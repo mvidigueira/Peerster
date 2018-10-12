@@ -4,22 +4,24 @@ import (
 	"sync"
 )
 
+//SafeMessagesMap - safe map for known messages
 type SafeMessagesMap struct {
 	originsMap sync.Map
 }
 
+//NewSafeMessagesMap - for the creation of SafeMessagesMap
 func NewSafeMessagesMap() *SafeMessagesMap {
 	return &SafeMessagesMap{originsMap: sync.Map{}}
 }
 
-func (scm *SafeMessagesMap) AddOrigin(origin string) {
-	scm.originsMap.Store(origin, sync.Map{})
-}
-
+//AddMessage - adds a rumor message to the underlying map on the following conditions:
+//1) the message is new
+//2) if it is not the first message of that origin, the previous message must be present
+//returns true if 1) and 2), false otherwise
 func (scm *SafeMessagesMap) AddMessage(msg *RumorMessage) (isNew bool) {
 	pmi, _ := scm.originsMap.LoadOrStore(msg.Origin, &sync.Map{})
 	pm := pmi.(*sync.Map)
-	var notNew bool
+	notNew := true
 	if msg.ID == 1 {
 		_, notNew = pm.LoadOrStore(msg.ID, msg)
 	} else if _, isLoad := pm.Load(msg.ID - 1); isLoad {
@@ -29,33 +31,18 @@ func (scm *SafeMessagesMap) AddMessage(msg *RumorMessage) (isNew bool) {
 	return !notNew
 }
 
-func (scm *SafeMessagesMap) GetMessage(origin string, messageId uint32) (*RumorMessage, bool) {
+//GetMessage - returns the RumorMessage with id 'messageID' from node 'origin'
+func (scm *SafeMessagesMap) GetMessage(origin string, messageID uint32) (*RumorMessage, bool) {
 	pmi, _ := scm.originsMap.LoadOrStore(origin, &sync.Map{})
 	pm := pmi.(*sync.Map)
-	msg, ok := pm.Load(messageId)
+	msg, ok := pm.Load(messageID)
 	if !ok {
 		return nil, ok
 	}
 	return msg.(*RumorMessage), ok
 }
 
-func (scm *SafeMessagesMap) GetNewestID(origin string) uint32 {
-	pmi, _ := scm.originsMap.LoadOrStore(origin, &sync.Map{})
-	pm := pmi.(*sync.Map)
-
-	maxID := uint32(1)
-	idCounter := func(idI interface{}, rmI interface{}) bool {
-		id := idI.(uint32)
-		if id > maxID {
-			maxID = id
-		}
-		return true
-	}
-	pm.Range(idCounter)
-
-	return maxID
-}
-
+//GetOwnStatusPacket - returns a StatusPacket using the information of the known message IDs
 func (scm *SafeMessagesMap) GetOwnStatusPacket() *StatusPacket {
 	wants := make([]PeerStatus, 0)
 	wantInserter := func(originI interface{}, rmI interface{}) bool {
@@ -75,24 +62,4 @@ func (scm *SafeMessagesMap) GetOwnStatusPacket() *StatusPacket {
 	}
 	scm.originsMap.Range(wantInserter)
 	return &StatusPacket{Want: wants}
-}
-
-func (scm *SafeMessagesMap) GetAllMessages() []RumorMessage {
-	msgList := make([]RumorMessage, 0)
-
-	perOriginAppender := func(originI interface{}, rmI interface{}) bool {
-		rm := rmI.(*sync.Map)
-
-		perIdAppender := func(idI interface{}, msgI interface{}) bool {
-			msg := msgI.(*RumorMessage)
-			msgList = append(msgList, *msg)
-			return true
-		}
-		rm.Range(perIdAppender)
-
-		return true
-	}
-	scm.originsMap.Range(perOriginAppender)
-
-	return msgList
 }

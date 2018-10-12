@@ -12,5 +12,4 @@ func main() {
 
 	client := NewClient(*UIPort, *msg)
 	client.sendUDP()
-	client.close()
 }
