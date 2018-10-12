@@ -38,21 +38,23 @@ func main() {
 	http.HandleFunc("/message", messageHandler)
 	http.HandleFunc("/node", nodeHandler)
 	http.HandleFunc("/id", idHandler)
-	http.ListenAndServe("localhost:"+strconv.Itoa(*UIPort), nil)
+	for {
+		err := http.ListenAndServe("localhost:"+strconv.Itoa(*UIPort), nil)
+		panic(err)
+	}
 }
 
 func messageHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "GET" {
+	switch r.Method {
+	case "GET":
 		testJSON, err := json.Marshal(g.GetLatestMessagesList())
 		if err != nil {
 			panic(err)
 		}
-
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		w.Write(testJSON)
-	} else if r.Method == "POST" {
-		println("post received")
+	case "POST":
 		err := r.ParseForm()
 		if err != nil {
 			panic(err)
@@ -62,33 +64,32 @@ func messageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-type JsonPeer struct {
+type jsonPeer struct {
 	Name string
 }
 
 func nodeHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "GET" {
+	switch r.Method {
+	case "GET":
 		peers := g.GetPeersList()
 
-		jsonPeersList := make([]JsonPeer, len(peers))
+		jsonPeersList := make([]jsonPeer, len(peers))
 		for i, v := range peers {
-			jsonPeersList[i] = JsonPeer{Name: v}
+			jsonPeersList[i] = jsonPeer{Name: v}
 		}
-		testJson, err := json.Marshal(jsonPeersList)
+		testJSON, err := json.Marshal(jsonPeersList)
 		if err != nil {
 			panic(err)
 		}
-
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write(testJson)
-	} else if r.Method == "POST" {
+		w.Write(testJSON)
+	case "POST":
 		err := r.ParseForm()
 		if err != nil {
 			panic(err)
 		}
 		node := r.PostFormValue("peer")
-		println(node)
 		g.AddPeer(node)
 	}
 }

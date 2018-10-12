@@ -1,40 +1,65 @@
-var data = 
-    [
-        {
-            "Origin": "nodeA",
-            "ID": 1,
-            "Text": "one"
-        },
-        {
-            "Origin": "nodeB",
-            "ID": 1,
-            "Text": "two"
-        },
-        {
-            "Origin": "nodeC",
-            "ID": 1,
-            "Text": "three"
-        },
-        {
-            "Origin": "nodeD",
-            "ID": 1,
-            "Text": "four"
-        },
-        
-    ];
+var peerCount = 0;
+loadTables()
 
-$(function() {
-    $('#msgTable').bootstrapTable({
-        data: data
-    });
-});
+$(document).ready(function() {
+    $('#msgForm').on('submit', function(e) {
+        e.preventDefault();
+        var text = $("textarea#messageText").val();
 
-$(function() {
-    $.getJSON("http://localhost:10000/message", function(data, status){
-        console.log("HAH")
-        $('#msgTable').bootstrapTable({
-            data: data
+        $.ajax({
+            type: $(this).attr('method'),
+            url: $(this).attr('action'),
+            data: {message:text},
         });
-        console.log("HUH")
+    });
+
+    $('#nodeForm').on('submit', function(e) {
+        e.preventDefault();
+        var addr = $("input#peerAdress").val();
+
+        $.ajax({
+            type: $(this).attr('method'),
+            url: $(this).attr('action'),
+            data: {peer:addr},
+        });
+
     });
 });
+
+function getData() {
+    return false
+}
+function loadTables() {
+    $.getJSON("/message", function(d, status) {
+        sessionStorage.setItem("msgs", JSON.stringify(d))
+        $('#msgTable').bootstrapTable({
+            data: d
+        });
+    });
+
+    $.getJSON("/node", function(d, status){
+        $('#peerTable').bootstrapTable({
+            data: d
+        });
+        peerCount = d.length
+    });
+
+    $.getJSON("/id", function(d, status){
+        $('#nodeName').html("Peerster Client User Interface - " + d);
+    });
+}
+
+window.setInterval(function() {
+    $.getJSON("/message", function(d, status){
+        if(d.length > 0) {
+            $('#msgTable').bootstrapTable("append", d)
+        }
+    });
+
+    $.getJSON("/node", function(d, status){
+        if(d.length > peerCount) {
+            peerCount = d.length
+            $('#peerTable').bootstrapTable("refresh", d)
+        }
+    });
+}, 1000);
