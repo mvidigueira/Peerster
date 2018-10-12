@@ -53,9 +53,11 @@ func (g *Gossiper) AddPeer(peerAdress string) {
 //NewGossiper creates a new gossiper
 func NewGossiper(address, name string, UIport int, peers []string, simple bool) *Gossiper {
 	gossipAddr, err := net.ResolveUDPAddr("udp4", address)
+	dto.LogError(err)
 	clientAddr, err := net.ResolveUDPAddr("udp4", "localhost:"+strconv.Itoa(UIport))
 	dto.LogError(err)
 	udpConnGossip, err := net.ListenUDP("udp4", gossipAddr)
+	dto.LogError(err)
 	udpConnClient, err := net.ListenUDP("udp4", clientAddr)
 	dto.LogError(err)
 
