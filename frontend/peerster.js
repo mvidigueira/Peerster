@@ -1,5 +1,4 @@
 var peerCount = 0;
-loadTables()
 
 $(document).ready(function() {
     $('#msgForm').on('submit', function(e) {
@@ -24,14 +23,12 @@ $(document).ready(function() {
         });
 
     });
+
+    loadTables()
 });
 
-function getData() {
-    return false
-}
 function loadTables() {
     $.getJSON("/message", function(d, status) {
-        sessionStorage.setItem("msgs", JSON.stringify(d))
         $('#msgTable').bootstrapTable({
             data: d
         });
@@ -48,6 +45,7 @@ function loadTables() {
         $('#nodeName').html("Peerster Client User Interface - " + d);
     });
 }
+
 
 window.setInterval(function() {
     $.getJSON("/message", function(d, status){

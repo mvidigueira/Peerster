@@ -28,6 +28,14 @@ func (scm *QuitChanMap) AddListener(peerAddress string, origin string, messageID
 	return v.(chan int), loaded
 }
 
+func (scm *QuitChanMap) DeleteListener(peerAddress string, origin string, messageID uint32) {
+	pmi, _ := scm.peersMap.LoadOrStore(peerAddress, &sync.Map{})
+	pm := pmi.(*sync.Map)
+	omi, _ := pm.LoadOrStore(origin, &sync.Map{})
+	om := omi.(*sync.Map)
+	om.Delete(messageID)
+}
+
 //InformListeners - informs of termination and eliminates entries of listeners that are no longer
 //required to keep stubbornly sending messages (because the status packet NextID is higher than their messageID)
 //returns true if there aren't any processes/listeners remaining sending to that peer (false otherwise)
