@@ -1,3 +1,5 @@
 Peerster
 /client/client
 *.out
+*.tar.gz
+/github.com*
