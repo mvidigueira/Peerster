@@ -18,7 +18,7 @@ var packetSize = 1024
 const globalSeed = 2
 
 const rumorMongerTimeout = 1
-const antiEntropyTimeout = 10
+const antiEntropyTimeout = 1
 
 //Gossiper server responsible for answering client requests and rumor mongering with other gossipers
 type Gossiper struct {
@@ -176,13 +176,13 @@ func (g *Gossiper) receiveExternalUDP(cRumor, cStatus chan *dto.PacketAddressPai
 		switch packet.GetUnderlyingType() {
 		case "status":
 			if g.UseSimple {
-				log.Panicln("Running on 'simple' mode. Ignoring status message...")
+				log.Println("Running on 'simple' mode. Ignoring status message from " + senderAddress + "...")
 			} else {
 				cStatus <- pap
 			}
 		case "rumor":
 			if g.UseSimple {
-				log.Panicln("Running on 'simple' mode. Ignoring rumor message...")
+				log.Println("Running on 'simple' mode. Ignoring rumor message from " + senderAddress + "...")
 			} else {
 				cRumor <- pap
 			}
@@ -190,10 +190,10 @@ func (g *Gossiper) receiveExternalUDP(cRumor, cStatus chan *dto.PacketAddressPai
 			if g.UseSimple {
 				cRumor <- pap
 			} else {
-				log.Panicln("Running on normal mode. Ignoring simple message...")
+				log.Println("Running on normal mode. Ignoring simple message from " + senderAddress + "...")
 			}
 		default:
-			log.Panicln("Unrecognized message type. Ignoring...")
+			log.Println("Unrecognized message type. Ignoring message from " + senderAddress + "...")
 		}
 	}
 }
@@ -202,7 +202,6 @@ func (g *Gossiper) receiveExternalUDP(cRumor, cStatus chan *dto.PacketAddressPai
 //Creates and forwards them to status listening routines for that specific peer (concurrent)
 func (g *Gossiper) statusListenRoutine(cStatus chan *dto.PacketAddressPair) {
 	for pap := range cStatus {
-		printStatusMessage(pap)
 		peer := pap.GetSenderAddress()
 		g.addToPeers(peer) //fix concurrency issues here
 		g.printKnownPeers()
@@ -223,9 +222,12 @@ func (g *Gossiper) peerStatusListenRoutine(peerAddress string, cStatus chan *dto
 	for {
 		select {
 		case sp := <-cStatus:
+			mySp := g.msgMap.GetOwnStatusPacket()
+			statusUpdated := dto.StatusPacket{Want: peerStatusUpdated(mySp.Want, sp.Want)}
+			printStatusMessage(peerAddress, statusUpdated)
+
 			notMongering := g.quitChanMap.InformListeners(peerAddress, sp)
 
-			mySp := g.msgMap.GetOwnStatusPacket()
 			theirDesiredMsgs := peerStatusDifference(mySp.Want, sp.Want)
 
 			for _, v := range theirDesiredMsgs {
@@ -386,8 +388,8 @@ func (g *Gossiper) printKnownPeers() {
 }
 
 //printStatusMessage - prints a status message, format according to project description
-func printStatusMessage(pair *dto.PacketAddressPair) {
-	fmt.Printf("STATUS from %v %v\n", pair.GetSenderAddress(), pair.Packet.Status.String())
+func printStatusMessage(senderAddress string, status dto.StatusPacket) {
+	fmt.Printf("STATUS from %v %v\n", senderAddress, status.String())
 }
 
 //printClientMessage - prints a client message, format according to project description
@@ -426,6 +428,22 @@ func peerStatusDifference(have []dto.PeerStatus, want []dto.PeerStatus) []dto.Pe
 		}
 	}
 	return wantList
+}
+
+//peerStatusUpdated - same as above, but includes messages the peer wants but we can't give them
+//only used for printing according to project description example, otherwise pointless
+func peerStatusUpdated(have []dto.PeerStatus, want []dto.PeerStatus) []dto.PeerStatus {
+	wantMap := make(map[string]uint32)
+	for _, ps := range want {
+		wantMap[ps.Identifier] = ps.NextID
+	}
+	for _, ps := range have {
+		_, ok := wantMap[ps.Identifier]
+		if !ok {
+			want = append(want, dto.PeerStatus{Identifier: ps.Identifier, NextID: 1})
+		}
+	}
+	return want
 }
 
 //Complexity: ~O(N)
