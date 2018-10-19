@@ -60,6 +60,16 @@ func (g *GossipPacket) GetUnderlyingType() (subtype string) {
 	return
 }
 
+//IsChatPacket - returns true if the rumor message is a chat message, false otherwise
+func IsChatPacket(packet *GossipPacket) bool {
+	return packet.Rumor != nil && packet.Rumor.Text != ""
+}
+
+//IsChatRumor - returns true if the rumor message is a chat message, false otherwise
+func IsChatRumor(rm *RumorMessage) bool {
+	return rm.Text != ""
+}
+
 //GetOrigin - returns the origin name of the gossip packet
 func (g *GossipPacket) GetOrigin() (origin string) {
 	switch subtype := g.GetUnderlyingType(); subtype {

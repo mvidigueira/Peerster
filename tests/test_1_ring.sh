@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+cd ..
 go build
 cd client
 go build
@@ -27,8 +28,8 @@ do
 	peerPort=$((($gossipPort+1)%10+5000))
 	peer="127.0.0.1:$peerPort"
 	gossipAddr="127.0.0.1:$gossipPort"
-	./Peerster -UIPort=$UIPort -gossipAddr=$gossipAddr -name=$name -simple -peers=$peer > $outFileName &
-	outputFiles+=("$outFileName")
+	./Peerster -UIPort=$UIPort -gossipAddr=$gossipAddr -name=$name -simple -peers=$peer > "./tests/out/$outFileName" &
+	outputFiles+=("./tests/out/$outFileName")
 	if [[ "$DEBUG" == "true" ]] ; then
 		echo "$name running at UIPort $UIPort and gossipPort $gossipPort"
 	fi
@@ -46,12 +47,12 @@ pkill -f Peerster
 #testing
 failed="F"
 
-if !(grep -q "CLIENT MESSAGE $message" "E.out") ; then
+if !(grep -q "CLIENT MESSAGE $message" "./tests/out/E.out") ; then
 	failed="T"
 	echo -e "${RED}***FAILED: no Client message on E ***${NC}"
 fi
 
-if !(grep -q "CLIENT MESSAGE $message2" "B.out") ; then
+if !(grep -q "CLIENT MESSAGE $message2" "./tests/out/B.out") ; then
   	failed="T"
   	echo -e "${RED}***FAILED: no Client message on B ***${NC}"
 fi

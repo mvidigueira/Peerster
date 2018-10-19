@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+cd ..
 go build
 cd client
 go build
@@ -31,8 +32,8 @@ do
 	peerPort=$((($gossipPort+1)%10+5000))
 	peer="127.0.0.1:$peerPort"
 	gossipAddr="127.0.0.1:$gossipPort"
-	./Peerster -UIPort=$UIPort -gossipAddr=$gossipAddr -name=$name -peers=$peer > $outFileName &
-	outputFiles+=("$outFileName")
+	./Peerster -UIPort=$UIPort -gossipAddr=$gossipAddr -name=$name -peers=$peer > "./tests/out/$outFileName" &
+	outputFiles+=("./tests/out/$outFileName")
 	if [[ "$DEBUG" == "true" ]] ; then
 		echo "$name running at UIPort $UIPort and gossipPort $gossipPort"
 	fi
@@ -58,23 +59,23 @@ failed="F"
 
 echo -e "${RED}###CHECK that client messages arrived${NC}"
 
-if !(grep -q "CLIENT MESSAGE $message_c1_1" "E.out") ; then
+if !(grep -q "CLIENT MESSAGE $message_c1_1" "./tests/out/E.out") ; then
 	failed="T"
 fi
 
-if !(grep -q "CLIENT MESSAGE $message_c1_2" "E.out") ; then
+if !(grep -q "CLIENT MESSAGE $message_c1_2" "./tests/out/E.out") ; then
 	failed="T"
 fi
 
-if !(grep -q "CLIENT MESSAGE $message_c2_1" "B.out") ; then
+if !(grep -q "CLIENT MESSAGE $message_c2_1" "./tests/out/B.out") ; then
     failed="T"
 fi
 
-if !(grep -q "CLIENT MESSAGE $message_c2_2" "B.out") ; then
+if !(grep -q "CLIENT MESSAGE $message_c2_2" "./tests/out/B.out") ; then
     failed="T"
 fi
 
-if !(grep -q "CLIENT MESSAGE $message_c3" "G.out") ; then
+if !(grep -q "CLIENT MESSAGE $message_c3" "./tests/out/G.out") ; then
     failed="T"
 fi
 

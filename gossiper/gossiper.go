@@ -1,16 +1,14 @@
 package gossiper
 
 import (
-	"fmt"
 	"log"
 	"math/rand"
 	"net"
 	"protobuf"
 	"strconv"
-	"strings"
-	"time"
 
 	"github.com/mvidigueira/Peerster/dto"
+	"github.com/mvidigueira/Peerster/routing"
 )
 
 var packetSize = 1024
@@ -30,12 +28,14 @@ type Gossiper struct {
 	connUI *net.UDPConn
 
 	peers         *dto.SafeStringArray
-	seqID         *dto.SafeCounter
+	seqIDCounter  *dto.SafeCounter
 	statusChanMap *dto.SafeChanMap
 	quitChanMap   *dto.QuitChanMap
 	msgMap        *dto.SafeMessagesMap
 
 	latestMessages *dto.SafeMessageArray
+
+	routingTable *routing.SafeRoutingTable
 }
 
 //NewGossiper creates a new gossiper
@@ -58,10 +58,12 @@ func NewGossiper(address, name string, UIport int, peers []string, simple bool) 
 		connUI: udpConnClient,
 
 		peers:         dto.NewSafeStringArray(peers),
-		seqID:         dto.NewSafeCounter(),
+		seqIDCounter:  dto.NewSafeCounter(),
 		statusChanMap: dto.NewSafeChanMap(),
 		quitChanMap:   dto.NewQuitChanMap(),
 		msgMap:        dto.NewSafeMessagesMap(),
+
+		routingTable: routing.NewSafeRoutingTable(),
 
 		latestMessages: dto.NewSafeMessageArray(),
 	}
@@ -87,20 +89,10 @@ func (g *Gossiper) addToPeers(peerAddr string) (isNew bool) {
 	return g.peers.AppendUniqueToArray(peerAddr)
 }
 
-//pickRandomPeer - picks a random peer from the list of known peers, excluding any in the 'exceptions" list
-func (g *Gossiper) pickRandomPeer(exceptions []string) (string, bool) {
-	possiblePicks := stringArrayDifference(g.peers.GetArrayCopy(), exceptions)
-	if len(possiblePicks) == 0 {
-		return "", false
-	}
-	peer := possiblePicks[rand.Intn(len(possiblePicks))]
-	return peer, true
-}
-
 //addMessage - adds a message (rumor message) to the map of known messages and latest messages
 func (g *Gossiper) addMessage(rm *dto.RumorMessage) bool {
 	isNew := g.msgMap.AddMessage(rm)
-	if isNew {
+	if isNew { /*&& dto.IsChatRumor(rm)*/
 		g.latestMessages.AppendToArray(*rm)
 	}
 	return isNew
@@ -198,109 +190,6 @@ func (g *Gossiper) receiveExternalUDP(cRumor, cStatus chan *dto.PacketAddressPai
 	}
 }
 
-//statusListenRoutine - deals with status packets from all sources, adding unknown sources to the peers list.
-//Creates and forwards them to status listening routines for that specific peer (concurrent)
-func (g *Gossiper) statusListenRoutine(cStatus chan *dto.PacketAddressPair) {
-	for pap := range cStatus {
-		peer := pap.GetSenderAddress()
-		g.addToPeers(peer) //fix concurrency issues here
-		g.printKnownPeers()
-
-		c, isNew := g.statusChanMap.AddOrGetPeerStatusListener(peer)
-		if isNew {
-			go g.peerStatusListenRoutine(peer, c)
-		}
-		c <- pap.Packet.Status
-	}
-}
-
-//peerStatusListenRoutine - status listening routine for a specific peer. Has 3 major functionalities:
-//1) Informs rumormongering routines currently sending (trySend function) if the peers are in sync.
-//2) Updates the corresponding peer if it is detected that he is outdated
-//3) After 2), sends a status packet if the gossiper is outdated in comparison with the other peer
-func (g *Gossiper) peerStatusListenRoutine(peerAddress string, cStatus chan *dto.StatusPacket) {
-	for {
-		select {
-		case sp := <-cStatus:
-			mySp := g.msgMap.GetOwnStatusPacket()
-			statusUpdated := dto.StatusPacket{Want: peerStatusUpdated(mySp.Want, sp.Want)}
-			printStatusMessage(peerAddress, statusUpdated)
-
-			notMongering := g.quitChanMap.InformListeners(peerAddress, sp)
-
-			theirDesiredMsgs := peerStatusDifference(mySp.Want, sp.Want)
-
-			for _, v := range theirDesiredMsgs {
-				rm, _ := g.msgMap.GetMessage(v.Identifier, v.NextID)
-				packet := &dto.GossipPacket{Rumor: rm}
-				fmt.Printf("MONGERING with %s\n", peerAddress)
-				g.sendUDP(packet, peerAddress)
-			}
-
-			if notMongering && (len(theirDesiredMsgs) == 0) {
-				ourDesiredMsgs := peerStatusDifference(sp.Want, mySp.Want)
-				if len(ourDesiredMsgs) != 0 {
-					g.sendStatusPacket(peerAddress)
-				} else {
-					fmt.Printf("IN SYNC WITH %s\n", peerAddress)
-				}
-			}
-		}
-	}
-}
-
-//trySend - sends a gossip message to 'peer'. returns when either:
-//1) the peers are in sync (synchronization handled by peerStatusListenRoutine)
-//2) a timeout ocurrs
-func (g *Gossiper) trySend(packet *dto.GossipPacket, peer string) bool {
-	quit, alreadySending := g.quitChanMap.AddListener(peer, packet.GetOrigin(), packet.GetSeqID())
-	if alreadySending { //this should be impossible if using method trySend correctly. Keeping it here for future safety
-		return false
-	}
-
-	fmt.Printf("MONGERING with %s\n", peer)
-	g.sendUDP(packet, peer)
-
-	t := time.NewTicker(rumorMongerTimeout * time.Second)
-	for {
-		select {
-		case <-t.C:
-			g.quitChanMap.DeleteListener(peer, packet.GetOrigin(), packet.GetSeqID())
-			return false
-		case <-quit:
-			t.Stop()
-			return true
-		}
-	}
-}
-
-//rumorMonger - implements rumor mongering as per the project description
-//when choosing peers, excludes the sender on the first pick, and the previous choice on every following pick.
-//stops mongering if there are no available peers to send to (e.g. only knows peer who sent the message)
-func (g *Gossiper) rumorMonger(packet *dto.GossipPacket, except string) {
-	exceptions := []string{}
-	if except != "" {
-		exceptions = []string{except}
-	}
-	peer, ok := g.pickRandomPeer(exceptions)
-	if !ok {
-		return
-	}
-	for {
-		g.trySend(packet, peer)
-
-		if rand.Intn(2) == 1 {
-			return
-		}
-		exceptions = []string{peer}
-		peer, ok = g.pickRandomPeer(exceptions)
-		if !ok {
-			return
-		}
-		fmt.Printf("FLIPPED COIN sending rumor to %s\n", peer)
-	}
-}
-
 //makeGossip - prepares a gossip packet to be sent.
 //Subtype (simple vs rumor) depends on mode being used (flag -simple)
 //Attributes new seqID if message originated from this gossipe
@@ -318,13 +207,29 @@ func (g *Gossiper) makeGossip(received *dto.GossipPacket, isFromClient bool) (pa
 			Text:   received.GetContents(),
 		}
 		if isFromClient {
-			rumor.ID = g.seqID.GetAndIncrement()
+			rumor.ID = g.seqIDCounter.GetAndIncrement()
 		} else {
 			rumor.ID = received.GetSeqID()
 		}
 		packet = &dto.GossipPacket{Rumor: rumor, Status: nil}
 	}
 	return
+}
+
+//statusListenRoutine - deals with status packets from all sources, adding unknown sources to the peers list.
+//Creates and forwards them to status listening routines for that specific peer (concurrent)
+func (g *Gossiper) statusListenRoutine(cStatus chan *dto.PacketAddressPair) {
+	for pap := range cStatus {
+		peer := pap.GetSenderAddress()
+		g.addToPeers(peer) //fix concurrency issues here
+		g.printKnownPeers()
+
+		c, isNew := g.statusChanMap.AddOrGetPeerStatusListener(peer)
+		if isNew {
+			go g.peerStatusListenRoutine(peer, c)
+		}
+		c <- pap.Packet.Status
+	}
 }
 
 //clientListenRoutine - deals with new messages (simple packets) from clients
@@ -348,11 +253,15 @@ func (g *Gossiper) rumorListenRoutine(cRumor chan *dto.PacketAddressPair) {
 	for pap := range cRumor {
 		g.addToPeers(pap.GetSenderAddress())
 
-		printGossiperMessage(pap)
+		if dto.IsChatPacket(pap.Packet) || pap.Packet.GetUnderlyingType() == "simple" {
+			printGossiperMessage(pap)
+		}
 		g.printKnownPeers()
 
 		packet := g.makeGossip(pap.Packet, false)
 		if !g.UseSimple {
+			g.updateDSDV(pap) //routing
+
 			isNew := g.addMessage(packet.Rumor)
 			g.sendStatusPacket(pap.GetSenderAddress())
 			if isNew {
@@ -362,124 +271,4 @@ func (g *Gossiper) rumorListenRoutine(cRumor chan *dto.PacketAddressPair) {
 			g.sendAllPeers(packet, pap.GetSenderAddress())
 		}
 	}
-}
-
-//antiEntropy - implements anti entropy as per the project description
-func (g *Gossiper) antiEntropy() {
-	if g.UseSimple {
-		return
-	}
-	t := time.NewTicker(antiEntropyTimeout * time.Second)
-	for {
-		select {
-		case <-t.C:
-			pick, ok := g.pickRandomPeer([]string{})
-			if ok {
-				g.sendStatusPacket(pick)
-			}
-		}
-	}
-}
-
-//PRINTING
-//printKnownPeers - prints all known peers, format according to project description
-func (g *Gossiper) printKnownPeers() {
-	fmt.Println("PEERS " + strings.Join(g.peers.GetArrayCopy(), ","))
-}
-
-//printStatusMessage - prints a status message, format according to project description
-func printStatusMessage(senderAddress string, status dto.StatusPacket) {
-	fmt.Printf("STATUS from %v %v\n", senderAddress, status.String())
-}
-
-//printClientMessage - prints a client message, format according to project description
-func printClientMessage(pair *dto.PacketAddressPair) {
-	fmt.Printf("CLIENT MESSAGE %v\n", pair.GetContents())
-}
-
-//printGossiperMessage - prints a peer's message (rumor or simple), format according to project description
-func printGossiperMessage(pair *dto.PacketAddressPair) {
-	switch subtype := pair.Packet.GetUnderlyingType(); subtype {
-	case "simple":
-		fmt.Printf("SIMPLE MESSAGE origin %v from %v contents %v\n",
-			pair.GetOrigin(), pair.GetSenderAddress(), pair.GetContents())
-	case "rumor":
-		fmt.Printf("RUMOR origin %v from %v ID %v contents %v\n",
-			pair.GetOrigin(), pair.GetSenderAddress(), pair.GetSeqID(), pair.GetContents())
-	}
-}
-
-//'have': a status packet representing what messages we have
-//'want': a status packet representing what messages another peer is interested in
-//returns: a status packet representing all the useful messages that can be provided to the peer
-//Complexity: Assuming Go maps are ~O(1), complexity is ~O(N)
-func peerStatusDifference(have []dto.PeerStatus, want []dto.PeerStatus) []dto.PeerStatus {
-	wantMap := make(map[string]uint32)
-	for _, ps := range want {
-		wantMap[ps.Identifier] = ps.NextID
-	}
-	wantList := make([]dto.PeerStatus, 0)
-	for _, ps := range have {
-		want, ok := wantMap[ps.Identifier]
-		if ok && (want < ps.NextID) {
-			wantList = append(wantList, dto.PeerStatus{Identifier: ps.Identifier, NextID: want})
-		} else if !ok {
-			wantList = append(wantList, dto.PeerStatus{Identifier: ps.Identifier, NextID: 1})
-		}
-	}
-	return wantList
-}
-
-//peerStatusUpdated - same as above, but includes messages the peer wants but we can't give them
-//only used for printing according to project description example, otherwise pointless
-func peerStatusUpdated(have []dto.PeerStatus, want []dto.PeerStatus) []dto.PeerStatus {
-	wantMap := make(map[string]uint32)
-	for _, ps := range want {
-		wantMap[ps.Identifier] = ps.NextID
-	}
-	for _, ps := range have {
-		_, ok := wantMap[ps.Identifier]
-		if !ok {
-			want = append(want, dto.PeerStatus{Identifier: ps.Identifier, NextID: 1})
-		}
-	}
-	return want
-}
-
-//Complexity: ~O(N)
-func stringArrayDifference(first []string, second []string) (difference []string) {
-	mSecond := make(map[string]bool)
-	for _, key := range second {
-		mSecond[key] = true
-	}
-	difference = []string{}
-	for _, key := range first {
-		if _, ok := mSecond[key]; !ok {
-			difference = append(difference, key)
-		}
-	}
-	return
-}
-
-//UI functionality
-
-//GetName - returns the gossiper's name
-func (g *Gossiper) GetName() string {
-	return g.name
-}
-
-//GetLatestMessagesList - returns whatever messages have been received
-//since this function was last called
-func (g *Gossiper) GetLatestMessagesList() []dto.RumorMessage {
-	return g.latestMessages.GetArrayCopyAndDelete()
-}
-
-//GetPeersList - returns a string array with all known peers (ip:port)
-func (g *Gossiper) GetPeersList() []string {
-	return g.peers.GetArrayCopy()
-}
-
-//AddPeer - adds a peer (ip:port) to the list of known peers
-func (g *Gossiper) AddPeer(peerAdress string) {
-	g.addToPeers(peerAdress)
 }
