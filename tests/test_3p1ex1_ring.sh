@@ -42,6 +42,7 @@ do
 	name=$(echo "$name" | tr "A-Y" "B-Z")
 done
 
+
 ./client/client -UIPort=12349 -msg=$message_c1_1
 ./client/client -UIPort=12346 -msg=$message_c2_1
 sleep 2
@@ -134,8 +135,9 @@ else
     echo -e "${GREEN}***PASSED***${NC}"
 fi
 
+
 failed="F"
-echo -e "${RED}###CHECK mongering${NC}"
+echo -e "${RED}###CHECK dsdv messages ${NC}"
 gossipPort=5000
 for i in `seq 0 9`;
 do
@@ -145,54 +147,27 @@ do
     fi
     nextPort=$((($gossipPort+1)%10+5000))
 
-    msgLine1="MONGERING with 127.0.0.1:$relayPort"
-    msgLine2="MONGERING with 127.0.0.1:$nextPort"
+	msgLine1="DSDV E 127.0.0.1:\($relayPort\|$nextPort\)"
+	msgLine2="DSDV B 127.0.0.1:\($relayPort\|$nextPort\)"
+	msgLine3="DSDV G 127.0.0.1:\($relayPort\|$nextPort\)"
 
-    if !(grep -q "$msgLine1" "${outputFiles[$i]}") && !(grep -q "$msgLine2" "${outputFiles[$i]}") ; then
+	if [[ ($gossipPort != 5004) && ( $(grep -c "$msgLine1" "${outputFiles[$i]}") != 2)]] ; then
         failed="T"
-        echo -e "${RED} Fail at file: ${outputFiles[$i]}"
+        if [[ "$DEBUG" == "true" ]] ; then
+		    echo -e "${RED}Missing at ${outputFiles[$i]} ${NC}"
+	    fi
     fi
-    gossipPort=$(($gossipPort+1))
-done
-
-if [[ "$failed" == "T" ]] ; then
-    echo -e "${RED}***FAILED***${NC}"
-else
-    echo -e "${GREEN}***PASSED***${NC}"
-fi
-
-
-failed="F"
-echo -e "${RED}###CHECK status messages ${NC}"
-gossipPort=5000
-for i in `seq 0 9`;
-do
-    relayPort=$(($gossipPort-1))
-    if [[ "$relayPort" == 4999 ]] ; then
-        relayPort=5009
-    fi
-    nextPort=$((($gossipPort+1)%10+5000))
-
-	msgLine1="STATUS from 127.0.0.1:$relayPort"
-	msgLine2="STATUS from 127.0.0.1:$nextPort"
-	msgLine3="peer E nextID 3"
-	msgLine4="peer B nextID 3"
-	msgLine5="peer G nextID 2"	
-
-	if !(grep -q "$msgLine1" "${outputFiles[$i]}") ; then
+    if [[ ($gossipPort != 5001) && ( $(grep -c "$msgLine2" "${outputFiles[$i]}") != 2)]] ; then
         failed="T"
+        if [[ "$DEBUG" == "true" ]] ; then
+		    echo -e "${RED}Missing at ${outputFiles[$i]} ${NC}"
+	    fi
     fi
-    if !(grep -q "$msgLine2" "${outputFiles[$i]}") ; then
+    if [[ ($gossipPort != 5006) && ( $(grep -c "$msgLine3" "${outputFiles[$i]}") != 1)]] ; then
         failed="T"
-    fi
-    if !(grep -q "$msgLine3" "${outputFiles[$i]}") ; then
-        failed="T"
-    fi
-    if !(grep -q "$msgLine4" "${outputFiles[$i]}") ; then
-        failed="T"
-    fi
-    if !(grep -q "$msgLine5" "${outputFiles[$i]}") ; then
-        failed="T"
+        if [[ "$DEBUG" == "true" ]] ; then
+		    echo -e "${RED}Missing at ${outputFiles[$i]} ${NC}"
+	    fi
     fi
 	gossipPort=$(($gossipPort+1))
 done
@@ -203,68 +178,6 @@ else
     echo -e "${GREEN}***PASSED***${NC}"
 fi
 
-failed="F"
-echo -e "${RED}###CHECK flipped coin${NC}"
-gossipPort=5000
-for i in `seq 0 9`;
-do
-    relayPort=$(($gossipPort-1))
-    if [[ "$relayPort" == 4999 ]] ; then
-        relayPort=5009
-    fi
-    nextPort=$((($gossipPort+1)%10+5000))
-
-    msgLine1="FLIPPED COIN sending rumor to 127.0.0.1:$relayPort"
-    msgLine2="FLIPPED COIN sending rumor to 127.0.0.1:$nextPort"
-
-    if !(grep -q "$msgLine1" "${outputFiles[$i]}") ; then
-        failed="T"
-        echo -e "${RED} Fail at file: ${outputFiles[$i]}"
-    fi
-    if !(grep -q "$msgLine2" "${outputFiles[$i]}") ; then
-        failed="T"
-        echo -e "${RED} Fail at file: ${outputFiles[$i]}"
-    fi
-	gossipPort=$(($gossipPort+1))
-
-done
-
-if [[ "$failed" == "T" ]] ; then
-    echo -e "${RED}***FAILED***${NC}"
-else
-    echo -e "${GREEN}***PASSED***${NC}"
-fi
-
-failed="F"
-echo -e "${RED}###CHECK in sync${NC}"
-gossipPort=5000
-for i in `seq 0 9`;
-do
-    relayPort=$(($gossipPort-1))
-    if [[ "$relayPort" == 4999 ]] ; then
-        relayPort=5009
-    fi
-    nextPort=$((($gossipPort+1)%10+5000))
-
-    msgLine1="IN SYNC WITH 127.0.0.1:$relayPort"
-    msgLine2="IN SYNC WITH 127.0.0.1:$nextPort"
-
-    if !(grep -q "$msgLine1" "${outputFiles[$i]}") ; then
-        failed="T"
-        echo -e "${RED} Fail at file: ${outputFiles[$i]}"
-    fi
-    if !(grep -q "$msgLine2" "${outputFiles[$i]}") ; then
-        failed="T"
-        echo -e "${RED} Fail at file: ${outputFiles[$i]}"
-    fi
-	gossipPort=$(($gossipPort+1))
-done
-
-if [[ "$failed" == "T" ]] ; then
-    echo -e "${RED}***FAILED***${NC}"
-else
-    echo -e "${GREEN}***PASSED***${NC}"
-fi
 
 failed="F"
 echo -e "${RED}###CHECK correct peers${NC}"
