@@ -3,3 +3,4 @@ Peerster
 *.out
 *.tar.gz
 /github.com*
+/tests/out/*
