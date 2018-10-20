@@ -8,6 +8,8 @@ import (
 	"github.com/mvidigueira/Peerster/dto"
 )
 
+const rumorMongerTimeout = 1
+
 //pickRandomPeer - picks a random peer from the list of known peers, excluding any in the 'exceptions" list
 func (g *Gossiper) pickRandomPeer(exceptions []string) (string, bool) {
 	possiblePicks := stringArrayDifference(g.peers.GetArrayCopy(), exceptions)
@@ -56,6 +58,7 @@ func (g *Gossiper) peerStatusListenRoutine(peerAddress string, cStatus chan *dto
 //trySend - sends a gossip message to 'peer'. returns when either:
 //1) the peers are in sync (synchronization handled by peerStatusListenRoutine)
 //2) a timeout ocurrs
+//returns true if status packet was received confirming receipt, false otherwise
 func (g *Gossiper) trySend(packet *dto.GossipPacket, peer string) bool {
 	quit, alreadySending := g.quitChanMap.AddListener(peer, packet.GetOrigin(), packet.GetSeqID())
 	if alreadySending { //this should be impossible if using method trySend correctly. Keeping it here for future safety

@@ -2,6 +2,8 @@ package gossiper
 
 import "time"
 
+const antiEntropyTimeout = 10 //TODO: change to 1 for delivery
+
 //antiEntropy - implements anti entropy as per the project description
 func (g *Gossiper) antiEntropy() {
 	if g.UseSimple {

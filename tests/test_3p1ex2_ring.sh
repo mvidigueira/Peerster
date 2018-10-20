@@ -32,7 +32,7 @@ do
 	peerPort=$((($gossipPort+1)%10+5000))
 	peer="127.0.0.1:$peerPort"
 	gossipAddr="127.0.0.1:$gossipPort"
-	./Peerster -UIPort=$UIPort -gossipAddr=$gossipAddr -name=$name -peers=$peer > "./tests/out/$outFileName" &
+	./Peerster -UIPort=$UIPort -gossipAddr=$gossipAddr -name=$name -peers=$peer -rtimer=10 > "./tests/out/$outFileName" &
 	outputFiles+=("./tests/out/$outFileName")
 	if [[ "$DEBUG" == "true" ]] ; then
 		echo "$name running at UIPort $UIPort and gossipPort $gossipPort"
@@ -42,7 +42,7 @@ do
 	name=$(echo "$name" | tr "A-Y" "B-Z")
 done
 
-sleep 1
+sleep 3
 
 pkill -f Peerster
 
@@ -60,7 +60,7 @@ do
 	nextPort=$((($gossipPort+1)%10+5000))
     msgLine1="MONGERING with 127.0.0.1:\($relayPort\|$nextPort\)"
 
-	if !(grep -Eq "$msgLine1" "${outputFiles[$i]}") ; then
+	if !(grep -q "$msgLine1" "${outputFiles[$i]}") ; then
         failed="T"
         if [[ "$DEBUG" == "true" ]] ; then
 		    echo -e "${RED}Missing at ${outputFiles[$i]} ${NC}"
@@ -89,14 +89,14 @@ do
     fi
     nextPort=$((($gossipPort+1)%10+5000))
 
-	msgLine1="DSDV \[A-J\] 127.0.0.1:\($relayPort\|$nextPort\)"
+	msgLine1="DSDV [ABCDEFGHIJ] 127.0.0.1:\($relayPort\|$nextPort\)"
 
-    count = $count + $(grep -c "$msgLine1" "${outputFiles[$i]}")
+	count=$(($count+$(grep -c "$msgLine1" "${outputFiles[$i]}")))
 
 	gossipPort=$(($gossipPort+1))
 done
 
-if [[ $count != 10 ]] ; then
+if [[ "$count" -lt 10 ]] ; then
     echo -e "${RED}***FAILED***${NC}"
     if [[ "$DEBUG" == "true" ]] ; then
 		echo -e "${RED} Count was $count < 10 ${NC}"

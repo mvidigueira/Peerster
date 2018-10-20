@@ -20,8 +20,9 @@ func main() {
 	UIPort := flag.Int("UIPort", 8080, "Port for the UI client (default \"8080\")")
 	gossipAddr := flag.String("gossipAddr", "127.0.0.1:5000", "ip:port for the gossiper (default \"127.0.0.1:5000\")")
 	name := flag.String("name", "", "name of the gossiper")
-	simple := flag.Bool("simple", false, "run gossiper in simple broadcast mode")
 	peersStr := flag.String("peers", "", "comma separated list of peers of the form ip:port")
+	rtimeout := flag.Int("rtimer", 0, "route rumors sending period in seconds, 0 to disable sending of rout rumors (default 0)")
+	simple := flag.Bool("simple", false, "run gossiper in simple broadcast mode")
 
 	flag.Parse()
 
@@ -30,7 +31,7 @@ func main() {
 	if *peersStr != "" {
 		peers = strings.Split(*peersStr, ",")
 	}
-	g = gossiper.NewGossiper(*gossipAddr, *name, *UIPort, peers, *simple)
+	g = gossiper.NewGossiper(*gossipAddr, *name, *UIPort, peers, *simple, *rtimeout)
 
 	go g.Start()
 

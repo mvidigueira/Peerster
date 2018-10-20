@@ -13,10 +13,7 @@ import (
 
 var packetSize = 1024
 
-const globalSeed = 2
-
-const rumorMongerTimeout = 1
-const antiEntropyTimeout = 1
+const globalSeed = 2 //time.Now().UnixNano()
 
 //Gossiper server responsible for answering client requests and rumor mongering with other gossipers
 type Gossiper struct {
@@ -36,10 +33,11 @@ type Gossiper struct {
 	latestMessages *dto.SafeMessageArray
 
 	routingTable *routing.SafeRoutingTable
+	rtimeout     int
 }
 
 //NewGossiper creates a new gossiper
-func NewGossiper(address, name string, UIport int, peers []string, simple bool) *Gossiper {
+func NewGossiper(address, name string, UIport int, peers []string, simple bool, rtimeout int) *Gossiper {
 	gossipAddr, err := net.ResolveUDPAddr("udp4", address)
 	dto.LogError(err)
 	clientAddr, err := net.ResolveUDPAddr("udp4", "localhost:"+strconv.Itoa(UIport))
@@ -66,22 +64,26 @@ func NewGossiper(address, name string, UIport int, peers []string, simple bool) 
 		routingTable: routing.NewSafeRoutingTable(),
 
 		latestMessages: dto.NewSafeMessageArray(),
+		rtimeout:       rtimeout,
 	}
 }
 
 //Start starts the gossiper listening routines
 func (g *Gossiper) Start() {
-	rand.Seed(globalSeed) //time.Now().UnixNano()
-	cUI := make(chan *dto.PacketAddressPair)
-	go g.clientListenRoutine(cUI)
-	go g.receiveClientUDP(cUI)
+	rand.Seed(globalSeed)
 
 	cRumor := make(chan *dto.PacketAddressPair)
 	cStatus := make(chan *dto.PacketAddressPair)
 	go g.statusListenRoutine(cStatus)
 	go g.rumorListenRoutine(cRumor)
 	go g.receiveExternalUDP(cRumor, cStatus)
-	g.antiEntropy()
+	go g.antiEntropy()
+
+	go g.periodicRouteRumor() //DSDV
+
+	cUI := make(chan *dto.PacketAddressPair)
+	go g.clientListenRoutine(cUI)
+	g.receiveClientUDP(cUI)
 }
 
 //addToPeers - adds a peer (ip:port) to the list of known peers
@@ -200,7 +202,7 @@ func (g *Gossiper) makeGossip(received *dto.GossipPacket, isFromClient bool) (pa
 			RelayPeerAddr: g.address,
 			Contents:      received.GetContents(),
 		}
-		packet = &dto.GossipPacket{Simple: simpleMsg, Status: nil}
+		packet = &dto.GossipPacket{Simple: simpleMsg}
 	} else {
 		rumor := &dto.RumorMessage{
 			Origin: received.GetOrigin(),
@@ -211,7 +213,7 @@ func (g *Gossiper) makeGossip(received *dto.GossipPacket, isFromClient bool) (pa
 		} else {
 			rumor.ID = received.GetSeqID()
 		}
-		packet = &dto.GossipPacket{Rumor: rumor, Status: nil}
+		packet = &dto.GossipPacket{Rumor: rumor}
 	}
 	return
 }
