@@ -1,6 +1,17 @@
 var peerCount = 0;
 
 $(document).ready(function() {
+    $('#privateMsgForm').on('submit', function(e) {
+        e.preventDefault();
+        var text = $("textarea#privateMessageText").val();
+        //var destination = $("").val();
+        $.ajax({
+            type: $(this).attr('method'),
+            url: $(this).attr('action'),
+            data: {message:text, peer:destination},
+        });
+    });
+
     $('#msgForm').on('submit', function(e) {
         e.preventDefault();
         var text = $("textarea#messageText").val();

@@ -4,3 +4,4 @@ Peerster
 *.tar.gz
 /github.com*
 /tests/out/*
+/out/*

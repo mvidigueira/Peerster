@@ -94,7 +94,7 @@ func (g *Gossiper) addToPeers(peerAddr string) (isNew bool) {
 //addMessage - adds a message (rumor message) to the map of known messages and latest messages
 func (g *Gossiper) addMessage(rm *dto.RumorMessage) bool {
 	isNew := g.msgMap.AddMessage(rm)
-	if isNew { /*&& dto.IsChatRumor(rm)*/
+	if isNew && dto.IsChatRumor(rm) {
 		g.latestMessages.AppendToArray(*rm)
 	}
 	return isNew
@@ -141,6 +141,9 @@ func (g *Gossiper) receiveClientUDP(c chan *dto.PacketAddressPair) {
 		err = protobuf.Decode(packetBytes, packet)
 		switch packet.GetUnderlyingType() {
 		case "simple":
+			if packet.GetContents() == "" {
+				continue
+			}
 			packet.Simple.OriginalName = g.name
 			c <- &dto.PacketAddressPair{Packet: packet}
 		default:
