@@ -39,11 +39,37 @@ func (sp *StatusPacket) String() string {
 	return str
 }
 
+//PrivateMessage - subtype of GossipPacket used for private messages between peers
+type PrivateMessage struct {
+	Origin      string
+	ID          uint32
+	Text        string
+	Destination string
+	HopLimit    uint32
+}
+
+//DecrementHopCount - decrements hop count of PrivateMessage by 1
+func (pm *PrivateMessage) DecrementHopCount() (shouldSend bool) {
+	pm.HopLimit--
+	return (pm.HopLimit <= 0)
+}
+
+//ToRumorMessage - type conversion
+func (pm PrivateMessage) ToRumorMessage() RumorMessage {
+	rm := RumorMessage{
+		Origin: pm.Origin,
+		ID:     pm.ID,
+		Text:   pm.Text,
+	}
+	return rm
+}
+
 //GossipPacket - protocol structure to be serialized and sent between peers
 type GossipPacket struct {
-	Simple *SimpleMessage
-	Rumor  *RumorMessage
-	Status *StatusPacket
+	Simple  *SimpleMessage
+	Rumor   *RumorMessage
+	Status  *StatusPacket
+	Private *PrivateMessage
 }
 
 //GetUnderlyingType - returns the underlying type of the gossip packet, or the empty string in case of no subtype
@@ -54,6 +80,8 @@ func (g *GossipPacket) GetUnderlyingType() (subtype string) {
 		subtype = "rumor"
 	} else if g.Status != nil {
 		subtype = "status"
+	} else if g.Private != nil {
+		subtype = "private"
 	} else {
 		subtype = ""
 	}
@@ -77,6 +105,8 @@ func (g *GossipPacket) GetOrigin() (origin string) {
 		origin = g.Simple.OriginalName
 	case "rumor":
 		origin = g.Rumor.Origin
+	case "private":
+		origin = g.Private.Origin
 	case "status":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract origin name from a STATUS message"}
 		LogError(err)
@@ -95,6 +125,8 @@ func (g *GossipPacket) GetSeqID() (id uint32) {
 		LogError(err)
 	case "rumor":
 		id = g.Rumor.ID
+	case "private":
+		id = g.Private.ID
 	case "status":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract ID from a STATUS message"}
 		LogError(err)
@@ -112,8 +144,52 @@ func (g *GossipPacket) GetContents() (contents string) {
 		contents = g.Simple.Contents
 	case "rumor":
 		contents = g.Rumor.Text
+	case "private":
+		contents = g.Private.Text
 	case "status":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract contents from a STATUS message"}
+		LogError(err)
+	default:
+		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
+		LogError(err)
+	}
+	return
+}
+
+//GetHopLimit - returns the hop-limit of the gossip packet
+func (g *GossipPacket) GetHopLimit() (id uint32) {
+	switch subtype := g.GetUnderlyingType(); subtype {
+	case "simple":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract hop-limit from a SIMPLE message"}
+		LogError(err)
+	case "rumor":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract hop-limit from a RUMOR message"}
+		LogError(err)
+	case "private":
+		id = g.Private.HopLimit
+	case "status":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract hop-limit from a STATUS message"}
+		LogError(err)
+	default:
+		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
+		LogError(err)
+	}
+	return
+}
+
+//GetDestination - returns the destination (peer name) of the PacketAddresspair
+func (g *GossipPacket) GetDestination() (dest string) {
+	switch subtype := g.GetUnderlyingType(); subtype {
+	case "simple":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract destination from a SIMPLE message"}
+		LogError(err)
+	case "rumor":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract destination from a RUMOR message"}
+		LogError(err)
+	case "private":
+		dest = g.Private.Destination
+	case "status":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract destination from a STATUS message"}
 		LogError(err)
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
@@ -152,6 +228,16 @@ func (pap *PacketAddressPair) GetSeqID() uint32 {
 //GetContents - returns the message (text) contents of the PacketAddresspair
 func (pap *PacketAddressPair) GetContents() string {
 	return pap.Packet.GetContents()
+}
+
+//GetHopLimit - returns the hop-limit of the PacketAddresspair
+func (pap *PacketAddressPair) GetHopLimit() uint32 {
+	return pap.Packet.GetHopLimit()
+}
+
+//GetDestination - returns the destination (peer name) of the PacketAddresspair
+func (pap *PacketAddressPair) GetDestination() string {
+	return pap.Packet.GetDestination()
 }
 
 //GetSenderAddress - returns the sender address of the PacketAddresspair

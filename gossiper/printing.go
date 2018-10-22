@@ -27,10 +27,13 @@ func printClientMessage(pair *dto.PacketAddressPair) {
 func printGossiperMessage(pair *dto.PacketAddressPair) {
 	switch subtype := pair.Packet.GetUnderlyingType(); subtype {
 	case "simple":
-		fmt.Printf("SIMPLE MESSAGE origin %v from %v contents %v\n",
+		fmt.Printf("SIMPLE MESSAGE origin %s from %s contents %s\n",
 			pair.GetOrigin(), pair.GetSenderAddress(), pair.GetContents())
 	case "rumor":
-		fmt.Printf("RUMOR origin %v from %v ID %v contents %v\n",
+		fmt.Printf("RUMOR origin %s from %s ID %v contents %s\n",
 			pair.GetOrigin(), pair.GetSenderAddress(), pair.GetSeqID(), pair.GetContents())
+	case "private":
+		fmt.Printf("PRIVATE origin %s hop-limit %v contents %s\n",
+			pair.GetOrigin(), pair.GetHopLimit(), pair.GetContents())
 	}
 }

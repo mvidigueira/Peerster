@@ -74,9 +74,11 @@ func (g *Gossiper) Start() {
 
 	cRumor := make(chan *dto.PacketAddressPair)
 	cStatus := make(chan *dto.PacketAddressPair)
+	cPrivate := make(chan *dto.PacketAddressPair)
 	go g.statusListenRoutine(cStatus)
 	go g.rumorListenRoutine(cRumor)
-	go g.receiveExternalUDP(cRumor, cStatus)
+	go g.privateMessageListenRoutine(cPrivate)
+	go g.receiveExternalUDP(cRumor, cStatus, cPrivate)
 	go g.antiEntropy()
 
 	go g.periodicRouteRumor() //DSDV
@@ -154,7 +156,7 @@ func (g *Gossiper) receiveClientUDP(c chan *dto.PacketAddressPair) {
 
 //receiveExternalUDP - receives gossip packets from PEERS and forwards them to the appropriate channel
 //among those provided, depending on whether they are rumor, simple or status packets
-func (g *Gossiper) receiveExternalUDP(cRumor, cStatus chan *dto.PacketAddressPair) {
+func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate chan *dto.PacketAddressPair) {
 	for {
 		packet := &dto.GossipPacket{}
 		packetBytes := make([]byte, packetSize)
@@ -182,6 +184,12 @@ func (g *Gossiper) receiveExternalUDP(cRumor, cStatus chan *dto.PacketAddressPai
 				log.Println("Running on 'simple' mode. Ignoring rumor message from " + senderAddress + "...")
 			} else {
 				cRumor <- pap
+			}
+		case "private":
+			if g.UseSimple {
+				log.Println("Running on 'simple' mode. Ignoring private message from " + senderAddress + "...")
+			} else {
+				cPrivate <- pap
 			}
 		case "simple":
 			if g.UseSimple {
@@ -275,5 +283,29 @@ func (g *Gossiper) rumorListenRoutine(cRumor chan *dto.PacketAddressPair) {
 		} else {
 			g.sendAllPeers(packet, pap.GetSenderAddress())
 		}
+	}
+}
+
+func (g *Gossiper) privateMessageListenRoutine(cPrivate chan *dto.PacketAddressPair) {
+	for pap := range cPrivate {
+		g.addToPeers(pap.GetSenderAddress())
+
+		if pap.GetDestination() == g.name {
+			printGossiperMessage(pap)
+			g.printKnownPeers()
+			rm := pap.Packet.Private.ToRumorMessage()
+			g.latestMessages.AppendToArray(rm)
+		} else {
+			g.printKnownPeers()
+			shouldSend := pap.Packet.Private.DecrementHopCount()
+			if shouldSend {
+				nextHop, ok := g.getNextHop(pap.GetDestination())
+				if ok {
+					g.sendUDP(pap.Packet, nextHop)
+				}
+			}
+		}
+
+		g.updateDSDV(pap) //routing
 	}
 }
