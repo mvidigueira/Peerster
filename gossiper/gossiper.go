@@ -73,11 +73,13 @@ func (g *Gossiper) Start() {
 	rand.Seed(globalSeed)
 
 	cRumor := make(chan *dto.PacketAddressPair)
-	cStatus := make(chan *dto.PacketAddressPair)
-	cPrivate := make(chan *dto.PacketAddressPair)
-	go g.statusListenRoutine(cStatus)
 	go g.rumorListenRoutine(cRumor)
+	cStatus := make(chan *dto.PacketAddressPair)
+	go g.statusListenRoutine(cStatus)
+
+	cPrivate := make(chan *dto.PacketAddressPair)
 	go g.privateMessageListenRoutine(cPrivate)
+
 	go g.receiveExternalUDP(cRumor, cStatus, cPrivate)
 	go g.antiEntropy()
 
@@ -85,7 +87,10 @@ func (g *Gossiper) Start() {
 
 	cUI := make(chan *dto.PacketAddressPair)
 	go g.clientListenRoutine(cUI)
-	g.receiveClientUDP(cUI)
+	cUIPM := make(chan *dto.PacketAddressPair)
+	go g.clientPMListenRoutine(cUI)
+
+	g.receiveClientUDP(cUI, cUIPM)
 }
 
 //addToPeers - adds a peer (ip:port) to the list of known peers
@@ -128,7 +133,7 @@ func (g *Gossiper) sendStatusPacket(peerAddress string) {
 
 //receiveClientUDP - receives gossip packets from CLIENTS and forwards them to the provided channel,
 //setting the origin in the process
-func (g *Gossiper) receiveClientUDP(c chan *dto.PacketAddressPair) {
+func (g *Gossiper) receiveClientUDP(cRumoring, cPMing chan *dto.PacketAddressPair) {
 	for {
 		packet := &dto.GossipPacket{}
 		packetBytes := make([]byte, packetSize)
@@ -147,7 +152,18 @@ func (g *Gossiper) receiveClientUDP(c chan *dto.PacketAddressPair) {
 				continue
 			}
 			packet.Simple.OriginalName = g.name
-			c <- &dto.PacketAddressPair{Packet: packet}
+			cRumoring <- &dto.PacketAddressPair{Packet: packet}
+		case "rumor":
+			if packet.GetContents() == "" {
+				continue
+			}
+			packet.Rumor.Origin = g.name
+			cRumoring <- &dto.PacketAddressPair{Packet: packet}
+		case "private":
+			if packet.GetContents() == "" {
+				continue
+			}
+			cPMing <- &dto.PacketAddressPair{Packet: packet}
 		default:
 			log.Println("Unrecognized message type. Ignoring...")
 		}
@@ -283,29 +299,5 @@ func (g *Gossiper) rumorListenRoutine(cRumor chan *dto.PacketAddressPair) {
 		} else {
 			g.sendAllPeers(packet, pap.GetSenderAddress())
 		}
-	}
-}
-
-func (g *Gossiper) privateMessageListenRoutine(cPrivate chan *dto.PacketAddressPair) {
-	for pap := range cPrivate {
-		g.addToPeers(pap.GetSenderAddress())
-
-		if pap.GetDestination() == g.name {
-			printGossiperMessage(pap)
-			g.printKnownPeers()
-			rm := pap.Packet.Private.ToRumorMessage()
-			g.latestMessages.AppendToArray(rm)
-		} else {
-			g.printKnownPeers()
-			shouldSend := pap.Packet.Private.DecrementHopCount()
-			if shouldSend {
-				nextHop, ok := g.getNextHop(pap.GetDestination())
-				if ok {
-					g.sendUDP(pap.Packet, nextHop)
-				}
-			}
-		}
-
-		g.updateDSDV(pap) //routing
 	}
 }

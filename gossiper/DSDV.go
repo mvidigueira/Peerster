@@ -7,6 +7,8 @@ import (
 	"github.com/mvidigueira/Peerster/dto"
 )
 
+const defaultHopLimit = 10
+
 func (g *Gossiper) updateDSDV(pap *dto.PacketAddressPair) {
 	if pap.GetOrigin() == g.name {
 		return
@@ -47,4 +49,46 @@ func (g *Gossiper) makeRouteRumorPacket() (packet *dto.GossipPacket) {
 	}
 	packet = &dto.GossipPacket{Rumor: rumor}
 	return
+}
+
+//clientPMListenRoutine - deals with new messages (simple packets) from clients
+func (g *Gossiper) clientPMListenRoutine(cUIPM chan *dto.PacketAddressPair) {
+	for pap := range cUIPM {
+		printClientMessage(pap)
+		g.printKnownPeers()
+
+		pap.Packet.Private.ID = 0
+		pap.Packet.Private.HopLimit = defaultHopLimit
+		pap.Packet.Private.Origin = g.name
+
+		nextHop, ok := g.getNextHop(pap.GetDestination())
+		if ok {
+			g.sendUDP(pap.Packet, nextHop)
+		}
+	}
+}
+
+//privateMessageListenRoutine - deals with private packets from other peers
+func (g *Gossiper) privateMessageListenRoutine(cPrivate chan *dto.PacketAddressPair) {
+	for pap := range cPrivate {
+		g.addToPeers(pap.GetSenderAddress())
+
+		if pap.GetDestination() == g.name {
+			printGossiperMessage(pap)
+			g.printKnownPeers()
+			rm := pap.Packet.Private.ToRumorMessage()
+			g.latestMessages.AppendToArray(rm)
+		} else {
+			g.printKnownPeers()
+			shouldSend := pap.Packet.Private.DecrementHopCount()
+			if shouldSend {
+				nextHop, ok := g.getNextHop(pap.GetDestination())
+				if ok {
+					g.sendUDP(pap.Packet, nextHop)
+				}
+			}
+		}
+
+		g.updateDSDV(pap) //routing
+	}
 }
