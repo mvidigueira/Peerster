@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"net"
 	"net/http"
 	"protobuf"
@@ -39,9 +40,24 @@ func main() {
 	http.HandleFunc("/message", messageHandler)
 	http.HandleFunc("/node", nodeHandler)
 	http.HandleFunc("/id", idHandler)
+
+	http.HandleFunc("/privatemessage", privateMessageHandler)
 	for {
 		err := http.ListenAndServe("localhost:"+strconv.Itoa(*UIPort), nil)
 		panic(err)
+	}
+}
+
+func privateMessageHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "POST":
+		err := r.ParseForm()
+		if err != nil {
+			panic(err)
+		}
+		message := r.PostForm.Get("message")
+		dest := r.PostForm.Get("destName")
+		fmt.Printf("PM: %s, Destination: %s\n", message, dest)
 	}
 }
 

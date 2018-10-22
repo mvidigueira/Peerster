@@ -89,7 +89,7 @@
             <form id="msgForm" action="/message" method="POST">
                 <label for="messageArea">New message:</label>
                 <div class="row">
-                    <div class="col-md-8">
+                    <div class="col-md-6">
                         <div class="form-group">
                             <textarea class="form-control" id="messageText" rows="1"></textarea>
                         </div>
@@ -99,13 +99,30 @@
                     </div>
                 </div>
             </form>
-            <form id="privateMsgForm" action="/pm" method="POST">
-                <label for="privateMessageText">New private message:</label>
+            <form id="privateMsgForm" action="/privatemessage" method="POST">
                 <div class="row">
-                    <div class="col-md-8">
+                    <div class="col-md-6">
+                        <label for="privateMessageText">New private message:</label>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="pmDestination">Available Destinations:</label>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-6">
                         <div class="form-group">
                             <textarea class="form-control" id="privateMessageText" rows="1"></textarea>
                         </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <select class="form-control" id="pmDestination">
+                              <option>1</option>
+                              <option>2</option>
+                              <option>3</option>
+                              <option>4</option>
+                            </select>
+                        </div> 
                     </div>
                     <div class="col-md-2">
                         <button type="submit" class="btn btn-primary">Send</button>

@@ -4,11 +4,11 @@ $(document).ready(function() {
     $('#privateMsgForm').on('submit', function(e) {
         e.preventDefault();
         var text = $("textarea#privateMessageText").val();
-        //var destination = $("").val();
+        var destination = $('select#pmDestination').val()
         $.ajax({
             type: $(this).attr('method'),
             url: $(this).attr('action'),
-            data: {message:text, peer:destination},
+            data: {message:text, destName:destination},
         });
     });
 
