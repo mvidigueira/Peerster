@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"protobuf"
-	"strconv"
 	"strings"
 
 	"github.com/mvidigueira/Peerster/dto"
@@ -15,10 +14,10 @@ import (
 )
 
 var g *gossiper.Gossiper
-var uiport int
+var uiport string
 
 func main() {
-	UIPort := flag.Int("UIPort", 8080, "Port for the UI client (default \"8080\")")
+	UIPort := flag.String("UIPort", "8080", "Port for the UI client (default \"8080\")")
 	gossipAddr := flag.String("gossipAddr", "127.0.0.1:5000", "ip:port for the gossiper (default \"127.0.0.1:5000\")")
 	name := flag.String("name", "", "name of the gossiper")
 	peersStr := flag.String("peers", "", "comma separated list of peers of the form ip:port")
@@ -45,8 +44,10 @@ func main() {
 
 	http.HandleFunc("/privatemessage", privateMessageHandler)
 	http.HandleFunc("/origins", originsHandler)
+
+	http.HandleFunc("/sharefile", shareFileHandler)
 	for {
-		err := http.ListenAndServe("localhost:"+strconv.Itoa(*UIPort), nil)
+		err := http.ListenAndServe("localhost:"+*UIPort, nil)
 		panic(err)
 	}
 }
@@ -117,6 +118,17 @@ func nodeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func idHandler(w http.ResponseWriter, r *http.Request) {
+	testJSON, err := json.Marshal(g.GetName())
+	if err != nil {
+		panic(err)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(testJSON)
+}
+
 type jsonOrigin struct {
 	Name string
 }
@@ -140,24 +152,26 @@ func originsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func idHandler(w http.ResponseWriter, r *http.Request) {
-	testJSON, err := json.Marshal(g.GetName())
-	if err != nil {
-		panic(err)
+func shareFileHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "POST":
+		err := r.ParseForm()
+		if err != nil {
+			panic(err)
+		}
+		filePath := r.PostFormValue("file")
+		sendFileShareUDP(filePath)
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write(testJSON)
 }
 
 func sendUDP(text string) {
 	addr, _ := net.ResolveUDPAddr("udp4", "localhost:5500")
-	addrGossiper, _ := net.ResolveUDPAddr("udp4", "localhost:"+strconv.Itoa(uiport))
+	addrGossiper, _ := net.ResolveUDPAddr("udp4", "localhost:"+uiport)
 	conn, _ := net.ListenUDP("udp4", addr)
 	msg := &dto.SimpleMessage{Contents: text}
 	packet := &dto.GossipPacket{Simple: msg}
-	packetBytes, _ := protobuf.Encode(packet)
+	request := &dto.ClientRequest{Packet: packet}
+	packetBytes, _ := protobuf.Encode(request)
 
 	conn.WriteToUDP(packetBytes, addrGossiper)
 	conn.Close()
@@ -165,11 +179,24 @@ func sendUDP(text string) {
 
 func sendPrivateUDP(dest string, text string) {
 	addr, _ := net.ResolveUDPAddr("udp4", "localhost:5500")
-	addrGossiper, _ := net.ResolveUDPAddr("udp4", "localhost:"+strconv.Itoa(uiport))
+	addrGossiper, _ := net.ResolveUDPAddr("udp4", "localhost:"+uiport)
 	conn, _ := net.ListenUDP("udp4", addr)
 	msg := &dto.PrivateMessage{Text: text, Destination: dest}
 	packet := &dto.GossipPacket{Private: msg}
-	packetBytes, _ := protobuf.Encode(packet)
+	request := &dto.ClientRequest{Packet: packet}
+	packetBytes, _ := protobuf.Encode(request)
+
+	conn.WriteToUDP(packetBytes, addrGossiper)
+	conn.Close()
+}
+
+func sendFileShareUDP(fileName string) {
+	addr, _ := net.ResolveUDPAddr("udp4", "localhost:5500")
+	addrGossiper, _ := net.ResolveUDPAddr("udp4", "localhost:"+uiport)
+	conn, _ := net.ListenUDP("udp4", addr)
+	fileToShare := &dto.FileToShare{FileName: fileName}
+	request := &dto.ClientRequest{File: fileToShare}
+	packetBytes, _ := protobuf.Encode(request)
 
 	conn.WriteToUDP(packetBytes, addrGossiper)
 	conn.Close()

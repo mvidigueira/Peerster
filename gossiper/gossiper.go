@@ -38,10 +38,10 @@ type Gossiper struct {
 }
 
 //NewGossiper creates a new gossiper
-func NewGossiper(address, name string, UIport int, peers []string, simple bool, rtimeout int) *Gossiper {
+func NewGossiper(address, name string, UIport string, peers []string, simple bool, rtimeout int) *Gossiper {
 	gossipAddr, err := net.ResolveUDPAddr("udp4", address)
 	dto.LogError(err)
-	clientAddr, err := net.ResolveUDPAddr("udp4", "localhost:"+strconv.Itoa(UIport))
+	clientAddr, err := net.ResolveUDPAddr("udp4", "localhost:"+UIport)
 	dto.LogError(err)
 	udpConnGossip, err := net.ListenUDP("udp4", gossipAddr)
 	dto.LogError(err)
@@ -91,8 +91,10 @@ func (g *Gossiper) Start() {
 	go g.clientListenRoutine(cUI)
 	cUIPM := make(chan *dto.PacketAddressPair)
 	go g.clientPMListenRoutine(cUIPM)
+	cFileShare := make(chan string)
+	go g.clientFileShareListenRoutine(cFileShare)
 
-	g.receiveClientUDP(cUI, cUIPM)
+	g.receiveClientUDP(cUI, cUIPM, cFileShare)
 }
 
 //addToPeers - adds a peer (ip:port) to the list of known peers
@@ -135,9 +137,9 @@ func (g *Gossiper) sendStatusPacket(peerAddress string) {
 
 //receiveClientUDP - receives gossip packets from CLIENTS and forwards them to the provided channel,
 //setting the origin in the process
-func (g *Gossiper) receiveClientUDP(cRumoring, cPMing chan *dto.PacketAddressPair) {
+func (g *Gossiper) receiveClientUDP(cRumoring, cPMing chan *dto.PacketAddressPair, cFileShare chan string) {
 	for {
-		packet := &dto.GossipPacket{}
+		request := &dto.ClientRequest{}
 		packetBytes := make([]byte, packetSize)
 		n, _, err := g.connUI.ReadFromUDP(packetBytes)
 		if n > packetSize {
@@ -147,21 +149,26 @@ func (g *Gossiper) receiveClientUDP(cRumoring, cPMing chan *dto.PacketAddressPai
 			log.Println(err)
 			continue
 		}
-		err = protobuf.Decode(packetBytes, packet)
-		switch packet.GetUnderlyingType() {
+		err = protobuf.Decode(packetBytes, request)
+		switch request.GetUnderlyingType() {
+		case "file":
+			cFileShare <- request.File.GetFileName()
 		case "simple":
+			packet := request.Packet
 			if packet.GetContents() == "" {
 				continue
 			}
 			packet.Simple.OriginalName = g.name
 			cRumoring <- &dto.PacketAddressPair{Packet: packet}
 		case "rumor":
+			packet := request.Packet
 			if packet.GetContents() == "" {
 				continue
 			}
 			packet.Rumor.Origin = g.name
 			cRumoring <- &dto.PacketAddressPair{Packet: packet}
 		case "private":
+			packet := request.Packet
 			if packet.GetContents() == "" {
 				continue
 			}

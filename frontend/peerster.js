@@ -35,6 +35,18 @@ $(document).ready(function() {
 
     });
 
+    $('#fileSharingForm').on('submit', function(e) {
+        e.preventDefault();
+        var fileName = $("input#shareFile").val().replace(/^.*[\\\/]/, '');
+
+        $.ajax({
+            type: $(this).attr('method'),
+            url: $(this).attr('action'),
+            data: {file:fileName},
+        });
+
+    });
+
     loadTables()
 });
 

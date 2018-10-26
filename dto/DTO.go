@@ -257,3 +257,31 @@ func LogError(err error) {
 		log.Fatal(err)
 	}
 }
+
+//FileToShare - protocol structure sent from client to gossiper with file name to share
+type FileToShare struct {
+	FileName string
+}
+
+//GetFileName - returns the name of the file
+func (fts *FileToShare) GetFileName() string {
+	return fts.FileName
+}
+
+//ClientRequest - protocol structure to be serialized and sent from client to gossiper
+type ClientRequest struct {
+	Packet *GossipPacket
+	File   *FileToShare
+}
+
+//GetUnderlyingType - returns the underlying type of the client request, or the empty string in case of no subtype
+func (cr *ClientRequest) GetUnderlyingType() (subtype string) {
+	if cr.Packet != nil {
+		subtype = cr.Packet.GetUnderlyingType()
+	} else if cr.File != nil {
+		subtype = "file"
+	} else {
+		subtype = ""
+	}
+	return
+}
