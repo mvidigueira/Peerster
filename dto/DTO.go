@@ -51,7 +51,7 @@ type PrivateMessage struct {
 //DecrementHopCount - decrements hop count of PrivateMessage by 1
 func (pm *PrivateMessage) DecrementHopCount() (shouldSend bool) {
 	pm.HopLimit--
-	return (pm.HopLimit <= 0)
+	return (pm.HopLimit > 0)
 }
 
 //ToRumorMessage - type conversion

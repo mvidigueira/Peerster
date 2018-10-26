@@ -31,6 +31,7 @@ type Gossiper struct {
 	msgMap        *dto.SafeMessagesMap
 
 	latestMessages *dto.SafeMessageArray
+	origins        *dto.SafeStringArray
 
 	routingTable *routing.SafeRoutingTable
 	rtimeout     int
@@ -62,6 +63,7 @@ func NewGossiper(address, name string, UIport int, peers []string, simple bool, 
 		msgMap:        dto.NewSafeMessagesMap(),
 
 		routingTable: routing.NewSafeRoutingTable(),
+		origins:      dto.NewSafeStringArray([]string{}),
 
 		latestMessages: dto.NewSafeMessageArray(),
 		rtimeout:       rtimeout,
@@ -88,7 +90,7 @@ func (g *Gossiper) Start() {
 	cUI := make(chan *dto.PacketAddressPair)
 	go g.clientListenRoutine(cUI)
 	cUIPM := make(chan *dto.PacketAddressPair)
-	go g.clientPMListenRoutine(cUI)
+	go g.clientPMListenRoutine(cUIPM)
 
 	g.receiveClientUDP(cUI, cUIPM)
 }

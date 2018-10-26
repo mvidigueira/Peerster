@@ -55,6 +55,19 @@ function loadTables() {
     $.getJSON("/id", function(d, status){
         $('#nodeName').html("Peerster Client User Interface - " + d);
     });
+
+    $.getJSON("/origins", function(d, status){
+        var sel = $('#pmDestination');
+        var selectedOption = $("#pmDestination option:selected").val();
+        sel.empty()
+
+        var options = (sel.prop)? sel.prop('options') : sel.attr('options');
+
+        $.each(d,function(i, value) {
+            options[options.length] = new Option(value.Name, value.Name);
+        });
+        sel.val(selectedOption);
+    });
 }
 
 
@@ -70,5 +83,20 @@ window.setInterval(function() {
             peerCount = d.length
             $('#peerTable').bootstrapTable("refresh", d)
         }
+    });
+
+    $.getJSON("/origins", function(d, status){
+        var sel = $('#pmDestination');
+        var selectedOption = $("#pmDestination option:selected").val();
+        sel.empty()
+
+        var options = (sel.prop)? sel.prop('options') : sel.attr('options');
+
+        $.each(d,function(i, value) {
+            options[options.length] = new Option(value.Name, value.Name);
+        });
+        sel.val(selectedOption);
+
+        //$('#pmDestination').html("Peerster Client User Interface - " + d);
     });
 }, 1000);

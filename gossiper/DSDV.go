@@ -13,11 +13,12 @@ func (g *Gossiper) updateDSDV(pap *dto.PacketAddressPair) {
 	if pap.GetOrigin() == g.name {
 		return
 	}
-	fmt.Printf("ATTEMPT %s %s\n", pap.GetOrigin(), pap.GetSenderAddress())
+	//fmt.Printf("ATTEMPT %s %s\n", pap.GetOrigin(), pap.GetSenderAddress())
 	updated := g.routingTable.UpdateEntry(pap.GetSeqID(), pap.GetOrigin(), pap.GetSenderAddress())
 	if updated {
 		fmt.Printf("DSDV %s %s\n", pap.GetOrigin(), pap.GetSenderAddress())
 	}
+	g.origins.AppendUniqueToArray(pap.GetOrigin())
 }
 
 func (g *Gossiper) getNextHop(origin string) (address string, ok bool) {
@@ -80,7 +81,9 @@ func (g *Gossiper) privateMessageListenRoutine(cPrivate chan *dto.PacketAddressP
 			g.latestMessages.AppendToArray(rm)
 		} else {
 			g.printKnownPeers()
+			fmt.Printf("Hop count: %v\n", pap.Packet.Private.HopLimit)
 			shouldSend := pap.Packet.Private.DecrementHopCount()
+			fmt.Printf("Should send?: %v\n", shouldSend)
 			if shouldSend {
 				nextHop, ok := g.getNextHop(pap.GetDestination())
 				if ok {

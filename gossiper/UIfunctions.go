@@ -24,3 +24,8 @@ func (g *Gossiper) GetPeersList() []string {
 func (g *Gossiper) AddPeer(peerAdress string) {
 	g.addToPeers(peerAdress)
 }
+
+//GetOriginsList - returns a string array with all known origins
+func (g *Gossiper) GetOriginsList() []string {
+	return g.origins.GetArrayCopy()
+}

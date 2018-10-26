@@ -36,12 +36,15 @@ func main() {
 
 	go g.Start()
 
+	//frontend
+
 	http.Handle("/", http.FileServer(http.Dir("./frontend")))
 	http.HandleFunc("/message", messageHandler)
 	http.HandleFunc("/node", nodeHandler)
 	http.HandleFunc("/id", idHandler)
 
 	http.HandleFunc("/privatemessage", privateMessageHandler)
+	http.HandleFunc("/origins", originsHandler)
 	for {
 		err := http.ListenAndServe("localhost:"+strconv.Itoa(*UIPort), nil)
 		panic(err)
@@ -57,7 +60,9 @@ func privateMessageHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		message := r.PostForm.Get("message")
 		dest := r.PostForm.Get("destName")
+
 		fmt.Printf("PM: %s, Destination: %s\n", message, dest)
+		sendPrivateUDP(dest, message)
 	}
 }
 
@@ -77,6 +82,7 @@ func messageHandler(w http.ResponseWriter, r *http.Request) {
 			panic(err)
 		}
 		message := r.PostForm.Get("message")
+		fmt.Printf("Message: %s\n", message)
 		sendUDP(message)
 	}
 }
@@ -111,6 +117,29 @@ func nodeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type jsonOrigin struct {
+	Name string
+}
+
+func originsHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "GET":
+		origins := g.GetOriginsList()
+
+		jsonOriginsList := make([]jsonOrigin, len(origins))
+		for i, v := range origins {
+			jsonOriginsList[i] = jsonOrigin{Name: v}
+		}
+		testJSON, err := json.Marshal(jsonOriginsList)
+		if err != nil {
+			panic(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(testJSON)
+	}
+}
+
 func idHandler(w http.ResponseWriter, r *http.Request) {
 	testJSON, err := json.Marshal(g.GetName())
 	if err != nil {
@@ -128,6 +157,18 @@ func sendUDP(text string) {
 	conn, _ := net.ListenUDP("udp4", addr)
 	msg := &dto.SimpleMessage{Contents: text}
 	packet := &dto.GossipPacket{Simple: msg}
+	packetBytes, _ := protobuf.Encode(packet)
+
+	conn.WriteToUDP(packetBytes, addrGossiper)
+	conn.Close()
+}
+
+func sendPrivateUDP(dest string, text string) {
+	addr, _ := net.ResolveUDPAddr("udp4", "localhost:5500")
+	addrGossiper, _ := net.ResolveUDPAddr("udp4", "localhost:"+strconv.Itoa(uiport))
+	conn, _ := net.ListenUDP("udp4", addr)
+	msg := &dto.PrivateMessage{Text: text, Destination: dest}
+	packet := &dto.GossipPacket{Private: msg}
 	packetBytes, _ := protobuf.Encode(packet)
 
 	conn.WriteToUDP(packetBytes, addrGossiper)
