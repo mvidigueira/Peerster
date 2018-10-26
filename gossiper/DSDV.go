@@ -62,9 +62,12 @@ func (g *Gossiper) clientPMListenRoutine(cUIPM chan *dto.PacketAddressPair) {
 		pap.Packet.Private.HopLimit = defaultHopLimit
 		pap.Packet.Private.Origin = g.name
 
-		nextHop, ok := g.getNextHop(pap.GetDestination())
-		if ok {
-			g.sendUDP(pap.Packet, nextHop)
+		shouldSend := pap.Packet.Private.DecrementHopCount()
+		if shouldSend {
+			nextHop, ok := g.getNextHop(pap.GetDestination())
+			if ok {
+				g.sendUDP(pap.Packet, nextHop)
+			}
 		}
 	}
 }
@@ -81,9 +84,7 @@ func (g *Gossiper) privateMessageListenRoutine(cPrivate chan *dto.PacketAddressP
 			g.latestMessages.AppendToArray(rm)
 		} else {
 			g.printKnownPeers()
-			fmt.Printf("Hop count: %v\n", pap.Packet.Private.HopLimit)
 			shouldSend := pap.Packet.Private.DecrementHopCount()
-			fmt.Printf("Should send?: %v\n", shouldSend)
 			if shouldSend {
 				nextHop, ok := g.getNextHop(pap.GetDestination())
 				if ok {
