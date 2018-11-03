@@ -73,17 +73,17 @@ func (g *Gossiper) clientFileDownloadListenRoutine(cFileDownloadUI chan *dto.Fil
 	for fileToDL := range cFileDownloadUI {
 		fmt.Printf("Download request for file with metahash: %x\n", fileToDL.GetMetahash())
 
-		alreadyDownloading := !(g.dlFilesSet.AddUnique(fileToDL.GetMetahash()))
-		if alreadyDownloading {
-			fmt.Printf("File with metahash %x is already being downloaded. Please wait...\n", fileToDL.GetMetahash())
-			continue
-		}
-
 		go g.downloadFile(fileToDL.GetFileName(), fileToDL.GetMetahash(), fileToDL.GetOrigin())
 	}
 }
 
 func (g *Gossiper) downloadFile(nameToSave string, metahash [32]byte, origin string) {
+	alreadyDownloading := !(g.dlFilesSet.AddUnique(metahash))
+	if alreadyDownloading {
+		fmt.Printf("File with metahash %x is already being downloaded. Please wait...\n", metahash)
+		return
+	}
+
 	fmt.Printf("DOWNLOADING metafile of %s from %s\n", nameToSave, origin)
 	metafile := g.downloadChunk(metahash, origin)
 
@@ -104,8 +104,9 @@ func (g *Gossiper) downloadFile(nameToSave string, metahash [32]byte, origin str
 
 	fileparsing.WriteFileFromChunks(nameToSave, chunks)
 	g.fileMap.AddEntry(nameToSave, size, metafile, metahash)
-
 	fmt.Printf("RECONSTRUCTED file %s\n", nameToSave)
+
+	g.dlFilesSet.Delete(metahash)
 }
 
 func (g *Gossiper) downloadChunk(hash [32]byte, origin string) (data []byte) {
