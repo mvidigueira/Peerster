@@ -64,12 +64,43 @@ func (pm PrivateMessage) ToRumorMessage() RumorMessage {
 	return rm
 }
 
+//DataRequest - subtype of GossipPacket used for file requests between peers
+type DataRequest struct {
+	Origin      string
+	Destination string
+	HopLimit    uint32
+	HashValue   []byte
+}
+
+//DecrementHopCount - decrements hop count of DataRequest by 1
+func (dreq *DataRequest) DecrementHopCount() (shouldSend bool) {
+	dreq.HopLimit--
+	return (dreq.HopLimit > 0)
+}
+
+//DataReply - subtype of GossipPacket used for file replies between peers
+type DataReply struct {
+	Origin      string
+	Destination string
+	HopLimit    uint32
+	HashValue   []byte
+	Data        []byte
+}
+
+//DecrementHopCount - decrements hop count of DataReply by 1
+func (drep *DataReply) DecrementHopCount() (shouldSend bool) {
+	drep.HopLimit--
+	return (drep.HopLimit > 0)
+}
+
 //GossipPacket - protocol structure to be serialized and sent between peers
 type GossipPacket struct {
-	Simple  *SimpleMessage
-	Rumor   *RumorMessage
-	Status  *StatusPacket
-	Private *PrivateMessage
+	Simple      *SimpleMessage
+	Rumor       *RumorMessage
+	Status      *StatusPacket
+	Private     *PrivateMessage
+	DataRequest *DataRequest
+	DataReply   *DataReply
 }
 
 //GetUnderlyingType - returns the underlying type of the gossip packet, or the empty string in case of no subtype
@@ -82,6 +113,10 @@ func (g *GossipPacket) GetUnderlyingType() (subtype string) {
 		subtype = "status"
 	} else if g.Private != nil {
 		subtype = "private"
+	} else if g.DataRequest != nil {
+		subtype = "datarequest"
+	} else if g.DataReply != nil {
+		subtype = "datareply"
 	} else {
 		subtype = ""
 	}
@@ -105,11 +140,15 @@ func (g *GossipPacket) GetOrigin() (origin string) {
 		origin = g.Simple.OriginalName
 	case "rumor":
 		origin = g.Rumor.Origin
-	case "private":
-		origin = g.Private.Origin
 	case "status":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract origin name from a STATUS message"}
 		LogError(err)
+	case "private":
+		origin = g.Private.Origin
+	case "datarequest":
+		origin = g.DataRequest.Origin
+	case "datareply":
+		origin = g.DataReply.Origin
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
 		LogError(err)
@@ -125,10 +164,16 @@ func (g *GossipPacket) GetSeqID() (id uint32) {
 		LogError(err)
 	case "rumor":
 		id = g.Rumor.ID
-	case "private":
-		id = g.Private.ID
 	case "status":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract ID from a STATUS message"}
+		LogError(err)
+	case "private":
+		id = g.Private.ID
+	case "datarequest":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract ID from a DATA REQUEST message"}
+		LogError(err)
+	case "datareply":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract ID from a DATA REPLY message"}
 		LogError(err)
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
@@ -144,10 +189,16 @@ func (g *GossipPacket) GetContents() (contents string) {
 		contents = g.Simple.Contents
 	case "rumor":
 		contents = g.Rumor.Text
-	case "private":
-		contents = g.Private.Text
 	case "status":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract contents from a STATUS message"}
+		LogError(err)
+	case "private":
+		contents = g.Private.Text
+	case "datarequest":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract contents from a DATA REQUEST message"}
+		LogError(err)
+	case "datareply":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract contents from a DATA REPLY message"}
 		LogError(err)
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
@@ -157,7 +208,7 @@ func (g *GossipPacket) GetContents() (contents string) {
 }
 
 //GetHopLimit - returns the hop-limit of the gossip packet
-func (g *GossipPacket) GetHopLimit() (id uint32) {
+func (g *GossipPacket) GetHopLimit() (limit uint32) {
 	switch subtype := g.GetUnderlyingType(); subtype {
 	case "simple":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract hop-limit from a SIMPLE message"}
@@ -165,11 +216,15 @@ func (g *GossipPacket) GetHopLimit() (id uint32) {
 	case "rumor":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract hop-limit from a RUMOR message"}
 		LogError(err)
-	case "private":
-		id = g.Private.HopLimit
 	case "status":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract hop-limit from a STATUS message"}
 		LogError(err)
+	case "private":
+		limit = g.Private.HopLimit
+	case "datarequest":
+		limit = g.DataRequest.HopLimit
+	case "datareply":
+		limit = g.DataReply.HopLimit
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
 		LogError(err)
@@ -177,7 +232,7 @@ func (g *GossipPacket) GetHopLimit() (id uint32) {
 	return
 }
 
-//GetDestination - returns the destination (peer name) of the PacketAddresspair
+//GetDestination - returns the destination (peer name) of the gossip packet
 func (g *GossipPacket) GetDestination() (dest string) {
 	switch subtype := g.GetUnderlyingType(); subtype {
 	case "simple":
@@ -186,11 +241,93 @@ func (g *GossipPacket) GetDestination() (dest string) {
 	case "rumor":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract destination from a RUMOR message"}
 		LogError(err)
-	case "private":
-		dest = g.Private.Destination
 	case "status":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract destination from a STATUS message"}
 		LogError(err)
+	case "private":
+		dest = g.Private.Destination
+	case "datarequest":
+		dest = g.DataRequest.Destination
+	case "datareply":
+		dest = g.DataReply.Destination
+	default:
+		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
+		LogError(err)
+	}
+	return
+}
+
+//GetHashValue - returns the hash value ([]byte) of the gossip packet
+func (g *GossipPacket) GetHashValue() (hash []byte) {
+	switch subtype := g.GetUnderlyingType(); subtype {
+	case "simple":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract hash value from a SIMPLE message"}
+		LogError(err)
+	case "rumor":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract hash value from a RUMOR message"}
+		LogError(err)
+	case "status":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract hash value from a STATUS message"}
+		LogError(err)
+	case "private":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract hash value from a PRIVATE message"}
+		LogError(err)
+	case "datarequest":
+		hash = g.DataRequest.HashValue
+	case "datareply":
+		hash = g.DataReply.HashValue
+	default:
+		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
+		LogError(err)
+	}
+	return
+}
+
+//GetData - returns the data ([]byte) of the gossip packet
+func (g *GossipPacket) GetData() (data []byte) {
+	switch subtype := g.GetUnderlyingType(); subtype {
+	case "simple":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract data from a SIMPLE message"}
+		LogError(err)
+	case "rumor":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract data from a RUMOR message"}
+		LogError(err)
+	case "status":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract data from a STATUS message"}
+		LogError(err)
+	case "private":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract data from a PRIVATE message"}
+		LogError(err)
+	case "datarequest":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract data from a DATA REQUEST message"}
+		LogError(err)
+	case "datareply":
+		data = g.DataReply.Data
+	default:
+		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
+		LogError(err)
+	}
+	return
+}
+
+//DecrementHopCount - returns true if positive hop count after decrement
+func (g *GossipPacket) DecrementHopCount() (shouldSend bool) {
+	switch subtype := g.GetUnderlyingType(); subtype {
+	case "simple":
+		err := &GossipPacketError{When: time.Now(), What: "Can't decrement hop count from a SIMPLE message"}
+		LogError(err)
+	case "rumor":
+		err := &GossipPacketError{When: time.Now(), What: "Can't decrement hop count from a RUMOR message"}
+		LogError(err)
+	case "status":
+		err := &GossipPacketError{When: time.Now(), What: "Can't decrement hop count from a STATUS message"}
+		LogError(err)
+	case "private":
+		shouldSend = g.Private.DecrementHopCount()
+	case "datarequest":
+		shouldSend = g.DataRequest.DecrementHopCount()
+	case "datareply":
+		shouldSend = g.DataReply.DecrementHopCount()
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
 		LogError(err)
@@ -215,32 +352,47 @@ type PacketAddressPair struct {
 	SenderAddress string
 }
 
-//GetOrigin - returns the origin name of the PacketAddresspair
+//GetOrigin - returns the origin name of the PacketAddressPair
 func (pap *PacketAddressPair) GetOrigin() string {
 	return pap.Packet.GetOrigin()
 }
 
-//GetSeqID - returns the sequence ID of the PacketAddresspair
+//GetSeqID - returns the sequence ID of the PacketAddressPair
 func (pap *PacketAddressPair) GetSeqID() uint32 {
 	return pap.Packet.GetSeqID()
 }
 
-//GetContents - returns the message (text) contents of the PacketAddresspair
+//GetContents - returns the message (text) contents of the PacketAddressPair
 func (pap *PacketAddressPair) GetContents() string {
 	return pap.Packet.GetContents()
 }
 
-//GetHopLimit - returns the hop-limit of the PacketAddresspair
+//GetHopLimit - returns the hop-limit of the PacketAddressPair
 func (pap *PacketAddressPair) GetHopLimit() uint32 {
 	return pap.Packet.GetHopLimit()
 }
 
-//GetDestination - returns the destination (peer name) of the PacketAddresspair
+//GetDestination - returns the destination (peer name) of the PacketAddressPair
 func (pap *PacketAddressPair) GetDestination() string {
 	return pap.Packet.GetDestination()
 }
 
-//GetSenderAddress - returns the sender address of the PacketAddresspair
+//GetHashValue - returns the hash value ([]byte) of the PacketAddressPair
+func (pap *PacketAddressPair) GetHashValue() []byte {
+	return pap.Packet.GetHashValue()
+}
+
+//GetData - returns the data ([]byte) of the PacketAddressPair
+func (pap *PacketAddressPair) GetData() []byte {
+	return pap.Packet.GetData()
+}
+
+//DecrementHopCount - returns true if positive hop count after decrement
+func (pap *PacketAddressPair) DecrementHopCount() bool {
+	return pap.Packet.DecrementHopCount()
+}
+
+//GetSenderAddress - returns the sender address of the PacketAddressPair
 func (pap *PacketAddressPair) GetSenderAddress() (address string) {
 	switch subtype := pap.Packet.GetUnderlyingType(); subtype {
 	case "simple":
@@ -268,18 +420,46 @@ func (fts *FileToShare) GetFileName() string {
 	return fts.FileName
 }
 
+//FileToDownload - protocol structure sent from client to gossiper.
+//Filename is the name the file is saved as.
+//Metahash identifies the file to download.
+//Origin identifies the peer that has the file.
+type FileToDownload struct {
+	FileName string
+	Origin   string
+	Metahash [32]byte
+}
+
+//GetFileName - returns the name of the file
+func (ftd *FileToDownload) GetFileName() string {
+	return ftd.FileName
+}
+
+//GetOrigin - returns the name of the peer that has the file
+func (ftd *FileToDownload) GetOrigin() string {
+	return ftd.Origin
+}
+
+//GetMetahash - returns the hash of the file's metafile
+func (ftd *FileToDownload) GetMetahash() [32]byte {
+	return ftd.Metahash
+}
+
 //ClientRequest - protocol structure to be serialized and sent from client to gossiper
 type ClientRequest struct {
-	Packet *GossipPacket
-	File   *FileToShare
+	Packet       *GossipPacket
+	FileShare    *FileToShare
+	FileDownload *FileToDownload
 }
 
 //GetUnderlyingType - returns the underlying type of the client request, or the empty string in case of no subtype
 func (cr *ClientRequest) GetUnderlyingType() (subtype string) {
 	if cr.Packet != nil {
 		subtype = cr.Packet.GetUnderlyingType()
-	} else if cr.File != nil {
-		subtype = "file"
+	} else if cr.FileShare != nil {
+		subtype = "fileShare"
+	} else if cr.FileDownload != nil {
+		subtype = "fileDownload"
 	} else {
 		subtype = ""
 	}

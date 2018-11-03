@@ -28,6 +28,7 @@ func (scm *QuitChanMap) AddListener(peerAddress string, origin string, messageID
 	return v.(chan int), loaded
 }
 
+//DeleteListener - removes the a listener for statuses from 'peerAdress', for 'origin' and 'messageID'
 func (scm *QuitChanMap) DeleteListener(peerAddress string, origin string, messageID uint32) {
 	pmi, _ := scm.peersMap.LoadOrStore(peerAddress, &sync.Map{})
 	pm := pmi.(*sync.Map)

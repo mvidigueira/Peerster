@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/mvidigueira/Peerster/dto"
+	"github.com/mvidigueira/Peerster/fileparsing"
 	"github.com/mvidigueira/Peerster/routing"
 )
 
@@ -35,6 +36,11 @@ type Gossiper struct {
 
 	routingTable *routing.SafeRoutingTable
 	rtimeout     int
+
+	chunkMap         *fileparsing.SafeChunkMap
+	fileMap          *fileparsing.SafeFileMap
+	dlFilesSet       *fileparsing.SafeFileSet
+	dlChunkListeners *fileparsing.DLChanMap
 }
 
 //NewGossiper creates a new gossiper
@@ -62,11 +68,16 @@ func NewGossiper(address, name string, UIport string, peers []string, simple boo
 		quitChanMap:   dto.NewQuitChanMap(),
 		msgMap:        dto.NewSafeMessagesMap(),
 
-		routingTable: routing.NewSafeRoutingTable(),
-		origins:      dto.NewSafeStringArray([]string{}),
-
 		latestMessages: dto.NewSafeMessageArray(),
-		rtimeout:       rtimeout,
+		origins:        dto.NewSafeStringArray([]string{}),
+
+		routingTable: routing.NewSafeRoutingTable(),
+		rtimeout:     rtimeout,
+
+		chunkMap:         fileparsing.NewSafeChunkMap(),
+		fileMap:          fileparsing.NewSafeFileMap(),
+		dlFilesSet:       fileparsing.NewSafeFileSet(),
+		dlChunkListeners: fileparsing.NewDLChanMap(),
 	}
 }
 
@@ -93,8 +104,10 @@ func (g *Gossiper) Start() {
 	go g.clientPMListenRoutine(cUIPM)
 	cFileShare := make(chan string)
 	go g.clientFileShareListenRoutine(cFileShare)
+	cFileDL := make(chan *dto.FileToDownload)
+	go g.clientFileDownloadListenRoutine(cFileDL)
 
-	g.receiveClientUDP(cUI, cUIPM, cFileShare)
+	g.receiveClientUDP(cUI, cUIPM, cFileShare, cFileDL)
 }
 
 //addToPeers - adds a peer (ip:port) to the list of known peers
@@ -137,7 +150,7 @@ func (g *Gossiper) sendStatusPacket(peerAddress string) {
 
 //receiveClientUDP - receives gossip packets from CLIENTS and forwards them to the provided channel,
 //setting the origin in the process
-func (g *Gossiper) receiveClientUDP(cRumoring, cPMing chan *dto.PacketAddressPair, cFileShare chan string) {
+func (g *Gossiper) receiveClientUDP(cRumoring, cPMing chan *dto.PacketAddressPair, cFileShare chan string, cFileDL chan *dto.FileToDownload) {
 	for {
 		request := &dto.ClientRequest{}
 		packetBytes := make([]byte, packetSize)
@@ -151,8 +164,6 @@ func (g *Gossiper) receiveClientUDP(cRumoring, cPMing chan *dto.PacketAddressPai
 		}
 		err = protobuf.Decode(packetBytes, request)
 		switch request.GetUnderlyingType() {
-		case "file":
-			cFileShare <- request.File.GetFileName()
 		case "simple":
 			packet := request.Packet
 			if packet.GetContents() == "" {
@@ -173,6 +184,10 @@ func (g *Gossiper) receiveClientUDP(cRumoring, cPMing chan *dto.PacketAddressPai
 				continue
 			}
 			cPMing <- &dto.PacketAddressPair{Packet: packet}
+		case "fileShare":
+			cFileShare <- request.FileShare.GetFileName()
+		case "fileDownload":
+			cFileDL <- request.FileDownload
 		default:
 			log.Println("Unrecognized message type. Ignoring...")
 		}

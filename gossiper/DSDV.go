@@ -84,15 +84,19 @@ func (g *Gossiper) privateMessageListenRoutine(cPrivate chan *dto.PacketAddressP
 			g.latestMessages.AppendToArray(rm)
 		} else {
 			g.printKnownPeers()
-			shouldSend := pap.Packet.Private.DecrementHopCount()
-			if shouldSend {
-				nextHop, ok := g.getNextHop(pap.GetDestination())
-				if ok {
-					g.sendUDP(pap.Packet, nextHop)
-				}
-			}
+			g.forward(pap.Packet)
 		}
 
 		g.updateDSDV(pap) //routing
+	}
+}
+
+func (g *Gossiper) forward(packet *dto.GossipPacket) {
+	shouldSend := packet.DecrementHopCount()
+	if shouldSend {
+		nextHop, ok := g.getNextHop(packet.GetDestination())
+		if ok {
+			g.sendUDP(packet, nextHop)
+		}
 	}
 }
