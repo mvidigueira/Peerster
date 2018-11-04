@@ -195,7 +195,7 @@ func sendFileShareUDP(fileName string) {
 	addrGossiper, _ := net.ResolveUDPAddr("udp4", "localhost:"+uiport)
 	conn, _ := net.ListenUDP("udp4", addr)
 	fileToShare := &dto.FileToShare{FileName: fileName}
-	request := &dto.ClientRequest{File: fileToShare}
+	request := &dto.ClientRequest{FileShare: fileToShare}
 	packetBytes, _ := protobuf.Encode(request)
 
 	conn.WriteToUDP(packetBytes, addrGossiper)

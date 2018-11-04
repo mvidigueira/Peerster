@@ -3,6 +3,7 @@ package dto
 import (
 	"fmt"
 	"log"
+	"runtime/debug"
 	"time"
 )
 
@@ -171,9 +172,11 @@ func (g *GossipPacket) GetSeqID() (id uint32) {
 		id = g.Private.ID
 	case "datarequest":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract ID from a DATA REQUEST message"}
+		debug.PrintStack()
 		LogError(err)
 	case "datareply":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract ID from a DATA REPLY message"}
+		debug.PrintStack()
 		LogError(err)
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}

@@ -12,7 +12,7 @@ import (
 	"github.com/mvidigueira/Peerster/routing"
 )
 
-var packetSize = 1024
+var packetSize = 10000
 
 const globalSeed = 2 //time.Now().UnixNano()
 
@@ -93,7 +93,12 @@ func (g *Gossiper) Start() {
 	cPrivate := make(chan *dto.PacketAddressPair)
 	go g.privateMessageListenRoutine(cPrivate)
 
-	go g.receiveExternalUDP(cRumor, cStatus, cPrivate)
+	cDataRequest := make(chan *dto.PacketAddressPair)
+	go g.dataRequestListenRoutine(cDataRequest)
+	cDataReply := make(chan *dto.PacketAddressPair)
+	go g.dataReplyListenRoutine(cDataReply)
+
+	go g.receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, cDataReply)
 	go g.antiEntropy()
 
 	go g.periodicRouteRumor() //DSDV
@@ -196,7 +201,7 @@ func (g *Gossiper) receiveClientUDP(cRumoring, cPMing chan *dto.PacketAddressPai
 
 //receiveExternalUDP - receives gossip packets from PEERS and forwards them to the appropriate channel
 //among those provided, depending on whether they are rumor, simple or status packets
-func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate chan *dto.PacketAddressPair) {
+func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, cDataReply chan *dto.PacketAddressPair) {
 	for {
 		packet := &dto.GossipPacket{}
 		packetBytes := make([]byte, packetSize)
@@ -236,6 +241,18 @@ func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate chan *dto.Packet
 				cRumor <- pap
 			} else {
 				log.Println("Running on normal mode. Ignoring simple message from " + senderAddress + "...")
+			}
+		case "datarequest":
+			if g.UseSimple {
+				log.Println("Running on 'simple' mode. Ignoring private message from " + senderAddress + "...")
+			} else {
+				cDataRequest <- pap
+			}
+		case "datareply":
+			if g.UseSimple {
+				log.Println("Running on 'simple' mode. Ignoring private message from " + senderAddress + "...")
+			} else {
+				cDataReply <- pap
 			}
 		default:
 			log.Println("Unrecognized message type. Ignoring message from " + senderAddress + "...")

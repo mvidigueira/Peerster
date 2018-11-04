@@ -36,17 +36,22 @@ func (g *Gossiper) dataRequestListenRoutine(cDataRequest chan *dto.PacketAddress
 		g.addToPeers(pap.GetSenderAddress())
 		g.printKnownPeers()
 
+		fmt.Printf("DATA REQUEST from %s for hashvalue %x\n", pap.GetOrigin(), pap.GetHashValue())
+
 		if pap.GetDestination() == g.name {
+			fmt.Printf("THIS IS THE DESTINATION\n")
 			drep, ok := g.answerDataRequest(pap.GetOrigin(), pap.GetHashValue())
 			if ok {
+				fmt.Printf("DATA REPLY CONSTRUCTION OK\n")
+				fmt.Printf("Hash: %x, Data: %s\n", drep.HashValue, drep.Data)
 				replyPacket := &dto.GossipPacket{DataReply: drep}
+				fmt.Printf("FORWARDING\n")
 				g.forward(replyPacket)
 			}
 		} else {
+			fmt.Printf("FORWARDING\n")
 			g.forward(pap.Packet)
 		}
-
-		g.updateDSDV(pap) //routing
 	}
 }
 
@@ -55,8 +60,13 @@ func (g *Gossiper) dataReplyListenRoutine(cDataReply chan *dto.PacketAddressPair
 		g.addToPeers(pap.GetSenderAddress())
 		g.printKnownPeers()
 
+		fmt.Printf("DATA REPLY from %s for hashvalue %x\n", pap.GetOrigin(), pap.GetHashValue())
+
 		if pap.GetDestination() == g.name {
-			//stuff
+			hash32, ok := fileparsing.ConvertToHash32(pap.GetHashValue())
+			if ok {
+				g.dlChunkListeners.InformListener(hash32, pap.GetData())
+			}
 		} else {
 			if verifyDataReply(pap.Packet.DataReply) {
 				g.forward(pap.Packet)
@@ -64,8 +74,6 @@ func (g *Gossiper) dataReplyListenRoutine(cDataReply chan *dto.PacketAddressPair
 				fmt.Printf("Error: incorrect hash value found in DataReply\n")
 			}
 		}
-
-		g.updateDSDV(pap) //routing
 	}
 }
 
@@ -150,12 +158,10 @@ func (g *Gossiper) makeDataRequest(destination string, checksum [32]byte) *dto.D
 }
 
 func (g *Gossiper) answerDataRequest(origin string, hash []byte) (dataReply *dto.DataReply, ok bool) {
-	if len(hash) != 32 {
-		fmt.Printf("SHA256 hash length mismatch. Is %v but should be 32.\n", len(hash))
+	hash32, ok := fileparsing.ConvertToHash32(hash)
+	if !ok {
 		return nil, false
 	}
-	var hash32 [32]byte
-	copy(hash32[:], hash)
 
 	sfe, ok := g.fileMap.GetEntry(hash32)
 	if ok {
@@ -168,7 +174,7 @@ func (g *Gossiper) answerDataRequest(origin string, hash []byte) (dataReply *dto
 		}
 		dataReply = g.makeDataReply(origin, chunk, hash32)
 	}
-	return
+	return dataReply, true
 }
 
 func verifyDataReply(dataReply *dto.DataReply) (ok bool) {

@@ -9,9 +9,10 @@ func main() {
 	dest := flag.String("dest", "", "destination for the private message")
 	fileName := flag.String("file", "", "file to be indexed by the gossiper")
 	msg := flag.String("msg", "", "message to be sent")
+	request := flag.String("request", "", "request a chunk or metafile of this hash")
 
 	flag.Parse()
 
-	client := NewClient(*UIPort, *dest, *fileName, *msg)
+	client := NewClient(*UIPort, *dest, *fileName, *msg, *request)
 	client.sendUDP()
 }

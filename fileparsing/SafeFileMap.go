@@ -25,7 +25,7 @@ func (sfm *SafeFileMap) AddEntry(name string, size int, metafile []byte, metahas
 //GetEntry - returns the element that maps to the provided metahash
 //ok's value is true if the element was present, false otherwise
 func (sfm *SafeFileMap) GetEntry(metahash [32]byte) (sfe *SafeFileEntry, ok bool) {
-	sfei, ok := sfm.filesMap.Load(sfe.metahash)
+	sfei, ok := sfm.filesMap.Load(metahash)
 	if !ok {
 		return nil, ok
 	}

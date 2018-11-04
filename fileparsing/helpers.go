@@ -102,3 +102,13 @@ func WriteFileFromChunks(name string, chunks [][]byte) (ok bool) {
 
 	return true
 }
+
+func ConvertToHash32(hash []byte) (hash32 [32]byte, ok bool) {
+	if len(hash) != 32 {
+		fmt.Printf("SHA256 hash length mismatch. Is %v but should be 32.\n", len(hash))
+		ok = false
+		return
+	}
+	copy(hash32[:], hash)
+	return hash32, true
+}
