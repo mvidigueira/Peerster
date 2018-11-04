@@ -103,6 +103,8 @@ func WriteFileFromChunks(name string, chunks [][]byte) (ok bool) {
 	return true
 }
 
+//ConvertToHash32 - Converts a slice of undetermined size to a 32-byte array version
+//Returns the 32-byte array, and true if the conversion was successful (false otherwise)
 func ConvertToHash32(hash []byte) (hash32 [32]byte, ok bool) {
 	if len(hash) != 32 {
 		fmt.Printf("SHA256 hash length mismatch. Is %v but should be 32.\n", len(hash))
