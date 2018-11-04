@@ -9,11 +9,13 @@ import (
 
 const defaultHopLimit = 10
 
+//updateDSDV - given a PacketAddressPair corresponding to a rumor message,
+//updates the routingTable aswell as the known origins
 func (g *Gossiper) updateDSDV(pap *dto.PacketAddressPair) {
 	if pap.GetOrigin() == g.name {
 		return
 	}
-	//fmt.Printf("ATTEMPT %s %s\n", pap.GetOrigin(), pap.GetSenderAddress())
+
 	updated := g.routingTable.UpdateEntry(pap.GetSeqID(), pap.GetOrigin(), pap.GetSenderAddress())
 	if updated {
 		fmt.Printf("DSDV %s %s\n", pap.GetOrigin(), pap.GetSenderAddress())
@@ -21,10 +23,35 @@ func (g *Gossiper) updateDSDV(pap *dto.PacketAddressPair) {
 	g.origins.AppendUniqueToArray(pap.GetOrigin())
 }
 
+//getNextHop - returns the address of the next peer in the path to 'origin'
 func (g *Gossiper) getNextHop(origin string) (address string, ok bool) {
 	return g.routingTable.GetNextHop(origin)
 }
 
+//forward - forwards a packet (Private, DataRequest or DataReply) to the next peer
+//in the path to its destination
+func (g *Gossiper) forward(packet *dto.GossipPacket) {
+	shouldSend := packet.DecrementHopCount()
+	if shouldSend {
+		nextHop, ok := g.getNextHop(packet.GetDestination())
+		if ok {
+			g.sendUDP(packet, nextHop)
+		}
+	}
+}
+
+//makeRouteRumorPacket - creates a route rumor packet
+func (g *Gossiper) makeRouteRumorPacket() (packet *dto.GossipPacket) {
+	rumor := &dto.RumorMessage{
+		ID:     g.seqIDCounter.GetAndIncrement(),
+		Origin: g.name,
+		Text:   "",
+	}
+	packet = &dto.GossipPacket{Rumor: rumor}
+	return
+}
+
+//periodicRouteRumor - sends a route rumor packet to a random peer every 'rtimeout' seconds
 func (g *Gossiper) periodicRouteRumor() {
 	if g.rtimeout == 0 {
 		return
@@ -42,17 +69,7 @@ func (g *Gossiper) periodicRouteRumor() {
 	}
 }
 
-func (g *Gossiper) makeRouteRumorPacket() (packet *dto.GossipPacket) {
-	rumor := &dto.RumorMessage{
-		ID:     g.seqIDCounter.GetAndIncrement(),
-		Origin: g.name,
-		Text:   "",
-	}
-	packet = &dto.GossipPacket{Rumor: rumor}
-	return
-}
-
-//clientPMListenRoutine - deals with new messages (simple packets) from clients
+//clientPMListenRoutine - deals with new Private messages from clients
 func (g *Gossiper) clientPMListenRoutine(cUIPM chan *dto.PacketAddressPair) {
 	for pap := range cUIPM {
 		printClientMessage(pap)
@@ -85,18 +102,6 @@ func (g *Gossiper) privateMessageListenRoutine(cPrivate chan *dto.PacketAddressP
 		} else {
 			g.printKnownPeers()
 			g.forward(pap.Packet)
-		}
-
-		g.updateDSDV(pap) //routing
-	}
-}
-
-func (g *Gossiper) forward(packet *dto.GossipPacket) {
-	shouldSend := packet.DecrementHopCount()
-	if shouldSend {
-		nextHop, ok := g.getNextHop(packet.GetDestination())
-		if ok {
-			g.sendUDP(packet, nextHop)
 		}
 	}
 }

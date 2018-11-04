@@ -286,7 +286,7 @@ func (g *Gossiper) makeGossip(received *dto.GossipPacket, isFromClient bool) (pa
 	return
 }
 
-//statusListenRoutine - deals with status packets from all sources, adding unknown sources to the peers list.
+//statusListenRoutine - deals with Status packets from all sources, adding unknown sources to the peers list.
 //Creates and forwards them to status listening routines for that specific peer (concurrent)
 func (g *Gossiper) statusListenRoutine(cStatus chan *dto.PacketAddressPair) {
 	for pap := range cStatus {
@@ -302,7 +302,7 @@ func (g *Gossiper) statusListenRoutine(cStatus chan *dto.PacketAddressPair) {
 	}
 }
 
-//clientListenRoutine - deals with new messages (simple packets) from clients
+//clientListenRoutine - deals with Simple/Rumor messages from clients
 func (g *Gossiper) clientListenRoutine(cUI chan *dto.PacketAddressPair) {
 	for pap := range cUI {
 		printClientMessage(pap)
@@ -318,7 +318,7 @@ func (g *Gossiper) clientListenRoutine(cUI chan *dto.PacketAddressPair) {
 	}
 }
 
-//rumorListenRoutine - deals with rumor/simple packets from other peers
+//rumorListenRoutine - deals with Rumor/Simple packets from other peers
 func (g *Gossiper) rumorListenRoutine(cRumor chan *dto.PacketAddressPair) {
 	for pap := range cRumor {
 		g.addToPeers(pap.GetSenderAddress())

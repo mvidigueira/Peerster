@@ -32,11 +32,3 @@ func (sfe *SafeFileEntry) GetMetafile() []byte {
 func (sfe *SafeFileEntry) GetMetahash() [32]byte {
 	return sfe.metahash
 }
-
-/*
-chunks, size, err := readChunks(name)
-	if err != nil {
-		return nil, err
-	}
-	chunksMap, metafile, metahash := createChunksMap(chunks)
-*/

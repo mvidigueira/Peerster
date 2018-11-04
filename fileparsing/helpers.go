@@ -40,6 +40,35 @@ func ReadChunks(fileName string) (chunks [][]byte, size int, err error) {
 	return chunks, size, nil
 }
 
+//WriteFileFromChunks - takes an array of chunks and writes them to file named 'name' at directiory 'dlBaseDir'
+//returns true if it successful, false otherwise
+func WriteFileFromChunks(name string, chunks [][]byte) (ok bool) {
+	f, err := os.Create(dlBaseDir + name)
+	if err != nil {
+		fmt.Println(err)
+		return false
+	}
+	defer f.Close()
+
+	w := bufio.NewWriter(f)
+
+	for _, chunk := range chunks {
+		_, err := w.Write(chunk)
+		if err != nil {
+			fmt.Println(err)
+			return false
+		}
+	}
+
+	err = w.Flush()
+	if err != nil {
+		fmt.Println(err)
+		return false
+	}
+
+	return true
+}
+
 //CreateChunksMap - takes an array of chunks and returns a checksum-chunk map.
 //Each checksum is created by applying SHA256 to each chunk.
 //Also returns an array of bytes with the concatenated checksums (metafile), and a hash (also SHA256) of this array.
@@ -74,35 +103,6 @@ func ParseMetafile(metafile []byte) (checksums [][32]byte, ok bool) {
 	return checksums, true
 }
 
-//WriteFileFromChunks - takes an array of chunks and writes them to file named 'name' at directiory 'dlBaseDir'
-//returns true if it successful, false otherwise
-func WriteFileFromChunks(name string, chunks [][]byte) (ok bool) {
-	f, err := os.Create(dlBaseDir + name)
-	if err != nil {
-		fmt.Println(err)
-		return false
-	}
-	defer f.Close()
-
-	w := bufio.NewWriter(f)
-
-	for _, chunk := range chunks {
-		_, err := w.Write(chunk)
-		if err != nil {
-			fmt.Println(err)
-			return false
-		}
-	}
-
-	err = w.Flush()
-	if err != nil {
-		fmt.Println(err)
-		return false
-	}
-
-	return true
-}
-
 //ConvertToHash32 - Converts a slice of undetermined size to a 32-byte array version
 //Returns the 32-byte array, and true if the conversion was successful (false otherwise)
 func ConvertToHash32(hash []byte) (hash32 [32]byte, ok bool) {
@@ -113,4 +113,14 @@ func ConvertToHash32(hash []byte) (hash32 [32]byte, ok bool) {
 	}
 	copy(hash32[:], hash)
 	return hash32, true
+}
+
+func VerifyDataHash(hash []byte, data []byte) (ok bool) {
+	if len(hash) != 32 {
+		fmt.Printf("SHA256 hash length mismatch. Is %v but should be 32.\n", len(hash))
+		return false
+	}
+	var hash32 [32]byte
+	copy(hash32[:], hash)
+	return hash32 == sha256.Sum256(data)
 }
