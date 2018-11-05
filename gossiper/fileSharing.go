@@ -143,17 +143,18 @@ func (g *Gossiper) dataReplyListenRoutine(cDataReply chan *dto.PacketAddressPair
 
 		fmt.Printf("DATA REPLY from %s for hashvalue %x\n", pap.GetOrigin(), pap.GetHashValue())
 
+		if !fileparsing.VerifyDataHash(pap.Packet.DataReply.HashValue, pap.Packet.DataReply.Data) {
+			fmt.Printf("Error: incorrect hash value found in DataReply\n")
+			continue
+		}
+
 		if pap.GetDestination() == g.name {
 			hash32, ok := fileparsing.ConvertToHash32(pap.GetHashValue())
 			if ok {
 				g.dlChunkListeners.InformListener(hash32, pap.GetData())
 			}
 		} else {
-			if fileparsing.VerifyDataHash(pap.Packet.DataReply.HashValue, pap.Packet.DataReply.Data) {
-				g.forward(pap.Packet)
-			} else {
-				fmt.Printf("Error: incorrect hash value found in DataReply\n")
-			}
+			g.forward(pap.Packet)
 		}
 	}
 }
