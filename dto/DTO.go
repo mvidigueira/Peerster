@@ -59,7 +59,7 @@ func (pm *PrivateMessage) DecrementHopCount() (shouldSend bool) {
 func (pm PrivateMessage) ToRumorMessage() RumorMessage {
 	rm := RumorMessage{
 		Origin: pm.Origin,
-		ID:     pm.ID,
+		ID:     0,
 		Text:   pm.Text,
 	}
 	return rm

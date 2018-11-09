@@ -7,7 +7,7 @@ import (
 	"github.com/mvidigueira/Peerster/dto"
 )
 
-const defaultHopLimit = 10
+const defaultHopLimit = 11
 
 //updateDSDV - given a PacketAddressPair corresponding to a rumor message,
 //updates the routingTable aswell as the known origins
@@ -35,6 +35,9 @@ func (g *Gossiper) forward(packet *dto.GossipPacket) {
 	if shouldSend {
 		nextHop, ok := g.getNextHop(packet.GetDestination())
 		if ok {
+			if packet.GetUnderlyingType() == "private" {
+				fmt.Printf("FORWARDING PRIVATE MESSAGE. Contents: %s, Destination: %s\n", packet.GetContents(), packet.GetDestination())
+			}
 			g.sendUDP(packet, nextHop)
 		}
 	}
@@ -54,6 +57,7 @@ func (g *Gossiper) makeRouteRumorPacket() (packet *dto.GossipPacket) {
 //periodicRouteRumor - sends a route rumor packet to a random peer every 'rtimeout' seconds
 func (g *Gossiper) periodicRouteRumor() {
 	if g.rtimeout == 0 {
+		fmt.Printf("Timeout is 0\n")
 		return
 	}
 	t := time.NewTicker(time.Duration(g.rtimeout) * time.Second)
@@ -63,6 +67,7 @@ func (g *Gossiper) periodicRouteRumor() {
 		if ok {
 			packet := g.makeRouteRumorPacket()
 			g.addMessage(packet.Rumor)
+			fmt.Printf("ATTEMPT to send route rumor message to %s\n", peer)
 			g.trySend(packet, peer)
 		}
 		<-t.C
@@ -79,8 +84,7 @@ func (g *Gossiper) clientPMListenRoutine(cUIPM chan *dto.PacketAddressPair) {
 		pap.Packet.Private.HopLimit = defaultHopLimit
 		pap.Packet.Private.Origin = g.name
 
-		shouldSend := pap.Packet.Private.DecrementHopCount()
-		if shouldSend {
+		if pap.Packet.Private.HopLimit > 0 {
 			nextHop, ok := g.getNextHop(pap.GetDestination())
 			if ok {
 				g.sendUDP(pap.Packet, nextHop)

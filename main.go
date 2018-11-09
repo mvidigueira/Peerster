@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/mvidigueira/Peerster/dto"
+	"github.com/mvidigueira/Peerster/fileparsing"
 	"github.com/mvidigueira/Peerster/gossiper"
 )
 
@@ -46,6 +48,7 @@ func main() {
 	http.HandleFunc("/origins", originsHandler)
 
 	http.HandleFunc("/sharefile", shareFileHandler)
+	http.HandleFunc("/dlfile", downloadFileHandler)
 	for {
 		err := http.ListenAndServe("localhost:"+*UIPort, nil)
 		panic(err)
@@ -164,6 +167,27 @@ func shareFileHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func downloadFileHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "POST":
+		err := r.ParseForm()
+		if err != nil {
+			panic(err)
+		}
+		fileName := r.PostFormValue("file")
+		from := r.PostFormValue("origin")
+		metahash := r.PostFormValue("metahash")
+
+		if fileName == "" {
+			fmt.Printf("DL Request error: File Save As name empty\n")
+		} else if from == "" {
+			fmt.Printf("DL Request error: origin name empty\n")
+		} else {
+			sendFileDownloadUDP(fileName, from, metahash)
+		}
+	}
+}
+
 func sendUDP(text string) {
 	addr, _ := net.ResolveUDPAddr("udp4", "localhost:5500")
 	addrGossiper, _ := net.ResolveUDPAddr("udp4", "localhost:"+uiport)
@@ -196,6 +220,27 @@ func sendFileShareUDP(fileName string) {
 	conn, _ := net.ListenUDP("udp4", addr)
 	fileToShare := &dto.FileToShare{FileName: fileName}
 	request := &dto.ClientRequest{FileShare: fileToShare}
+	packetBytes, _ := protobuf.Encode(request)
+
+	conn.WriteToUDP(packetBytes, addrGossiper)
+	conn.Close()
+}
+
+func sendFileDownloadUDP(saveAs string, from string, metahash string) {
+	addr, _ := net.ResolveUDPAddr("udp4", "localhost:5500")
+	addrGossiper, _ := net.ResolveUDPAddr("udp4", "localhost:"+uiport)
+	conn, _ := net.ListenUDP("udp4", addr)
+	hash, err := hex.DecodeString(metahash)
+	if err != nil {
+		fmt.Printf("Hash error: could not convert string to byte format. Is it in hex?\n")
+		return
+	}
+	hash32, ok := fileparsing.ConvertToHash32(hash)
+	if !ok {
+		return
+	}
+	fileToDownload := &dto.FileToDownload{FileName: saveAs, Origin: from, Metahash: hash32}
+	request := &dto.ClientRequest{FileDownload: fileToDownload}
 	packetBytes, _ := protobuf.Encode(request)
 
 	conn.WriteToUDP(packetBytes, addrGossiper)

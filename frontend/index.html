@@ -124,6 +124,7 @@
                     </div>
                 </div>
             </form>
+            
             <form id="fileSharingForm" action="/sharefile" method="POST">
                 <label for="shareFile">Share file</label>
                 <div class="row">
@@ -134,6 +135,40 @@
                     </div>
                     <div class="col-md-2">
                         <button type="submit" class="btn btn-primary">Share</button>
+                    </div>
+                </div>
+            </form>
+            <label >Download file</label>
+            <form id="fileDownloadingForm" action="/dlfile" method="POST">
+                <div class="row">
+                    <div class="col-md-4">
+                        <label for="dlFileHash">Metahash value:</label>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="dlFileFrom">From:</label>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="dlFileName">Save As:</label>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <textarea class="form-control" id="dlFileHash" rows="1"></textarea>
+                        </div> 
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <select class="form-control" id="dlFileFrom"></select>
+                        </div> 
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <textarea class="form-control" id="dlFileName" rows="1"></textarea>
+                        </div> 
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-primary">Download</button>
                     </div>
                 </div>
             </form>

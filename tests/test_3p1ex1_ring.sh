@@ -97,33 +97,48 @@ do
 		relayPort=5009
 	fi
 	nextPort=$((($gossipPort+1)%10+5000))
-	msgLine1="RUMOR origin E from 127.0.0.1:[0-9]{4} ID 1 contents $message_c1_1"
-	msgLine2="RUMOR origin E from 127.0.0.1:[0-9]{4} ID 2 contents $message_c1_2"
-	msgLine3="RUMOR origin B from 127.0.0.1:[0-9]{4} ID 1 contents $message_c2_1"
-	msgLine4="RUMOR origin B from 127.0.0.1:[0-9]{4} ID 2 contents $message_c2_2"
-	msgLine5="RUMOR origin G from 127.0.0.1:[0-9]{4} ID 1 contents $message_c3"
+	msgLine1="RUMOR origin E from 127.0.0.1:[0-9]{4} ID [0-9]+ contents $message_c1_1"
+	msgLine2="RUMOR origin E from 127.0.0.1:[0-9]{4} ID [0-9]+ contents $message_c1_2"
+	msgLine3="RUMOR origin B from 127.0.0.1:[0-9]{4} ID [0-9]+ contents $message_c2_1"
+	msgLine4="RUMOR origin B from 127.0.0.1:[0-9]{4} ID [0-9]+ contents $message_c2_2"
+	msgLine5="RUMOR origin G from 127.0.0.1:[0-9]{4} ID [0-9]+ contents $message_c3"
 
 	if [[ "$gossipPort" != 5004 ]] ; then
 		if !(grep -Eq "$msgLine1" "${outputFiles[$i]}") ; then
         	failed="T"
+			if [[ "$DEBUG" == "true" ]] ; then
+		    	echo -e "${RED}Missing at ${outputFiles[$i]} ${NC}"
+	    	fi
     	fi
 		if !(grep -Eq "$msgLine2" "${outputFiles[$i]}") ; then
         	failed="T"
+			if [[ "$DEBUG" == "true" ]] ; then
+		    	echo -e "${RED}Missing at ${outputFiles[$i]} ${NC}"
+	    	fi
     	fi
 	fi
 
 	if [[ "$gossipPort" != 5001 ]] ; then
 		if !(grep -Eq "$msgLine3" "${outputFiles[$i]}") ; then
         	failed="T"
+			if [[ "$DEBUG" == "true" ]] ; then
+		    	echo -e "${RED}Missing at ${outputFiles[$i]} ${NC}"
+	    	fi
     	fi
 		if !(grep -Eq "$msgLine4" "${outputFiles[$i]}") ; then
         	failed="T"
+			if [[ "$DEBUG" == "true" ]] ; then
+		    	echo -e "${RED}Missing at ${outputFiles[$i]} ${NC}"
+	    	fi
     	fi
 	fi
 	
 	if [[ "$gossipPort" != 5006 ]] ; then
 		if !(grep -Eq "$msgLine5" "${outputFiles[$i]}") ; then
         	failed="T"
+			if [[ "$DEBUG" == "true" ]] ; then
+		    	echo -e "${RED}Missing at ${outputFiles[$i]} ${NC}"
+	    	fi
     	fi
 	fi
 	gossipPort=$(($gossipPort+1))
@@ -151,19 +166,19 @@ do
 	msgLine2="DSDV B 127.0.0.1:\($relayPort\|$nextPort\)"
 	msgLine3="DSDV G 127.0.0.1:\($relayPort\|$nextPort\)"
 
-	if [[ ($gossipPort != 5004) && ( $(grep -c "$msgLine1" "${outputFiles[$i]}") != 2)]] ; then
+	if [[ ($gossipPort != 5004) && ( $(grep -c "$msgLine1" "${outputFiles[$i]}") < 2)]] ; then
         failed="T"
         if [[ "$DEBUG" == "true" ]] ; then
 		    echo -e "${RED}Missing at ${outputFiles[$i]} ${NC}"
 	    fi
     fi
-    if [[ ($gossipPort != 5001) && ( $(grep -c "$msgLine2" "${outputFiles[$i]}") != 2)]] ; then
+    if [[ ($gossipPort != 5001) && ( $(grep -c "$msgLine2" "${outputFiles[$i]}") < 2)]] ; then
         failed="T"
         if [[ "$DEBUG" == "true" ]] ; then
 		    echo -e "${RED}Missing at ${outputFiles[$i]} ${NC}"
 	    fi
     fi
-    if [[ ($gossipPort != 5006) && ( $(grep -c "$msgLine3" "${outputFiles[$i]}") != 1)]] ; then
+    if [[ ($gossipPort != 5006) && ( $(grep -c "$msgLine3" "${outputFiles[$i]}") < 1)]] ; then
         failed="T"
         if [[ "$DEBUG" == "true" ]] ; then
 		    echo -e "${RED}Missing at ${outputFiles[$i]} ${NC}"
