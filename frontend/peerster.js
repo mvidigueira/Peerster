@@ -93,9 +93,8 @@ function loadTables() {
     });
 }
 
-
 window.setInterval(function() {
-    $.getJSON("/message", function(d, status){
+    $.getJSON("/message", function(d, status) {
         if(d.length > 0) {
             $('#msgTable').bootstrapTable("append", d)
         }

@@ -73,7 +73,8 @@ func privateMessageHandler(w http.ResponseWriter, r *http.Request) {
 func messageHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
-		testJSON, err := json.Marshal(g.GetLatestMessagesList())
+		list := gossiper.ConvertToFEMList(g.GetLatestMessagesList())
+		testJSON, err := json.Marshal(list)
 		if err != nil {
 			panic(err)
 		}
