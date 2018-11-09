@@ -43,17 +43,26 @@ func (g *Gossiper) answerDataRequest(origin string, hash []byte) (dataReply *dto
 		return nil, false
 	}
 
-	sfe, ok := g.fileMap.GetEntry(hash32)
-	if ok {
-		dataReply = g.makeDataReply(origin, sfe.GetMetafile(), hash32)
-	} else {
-		chunk, ok := g.chunkMap.GetChunk(hash32)
-		if !ok {
-			fmt.Printf("No valid metafile/chunk found matching hash value '%x'\n", hash32)
-			return nil, false
-		}
-		dataReply = g.makeDataReply(origin, chunk, hash32)
+	chunk, ok := g.chunkMap.GetChunk(hash32)
+	if !ok {
+		fmt.Printf("No valid metafile/chunk found matching hash value '%x'\n", hash32)
+		return nil, false
 	}
+	dataReply = g.makeDataReply(origin, chunk, hash32)
+
+	/*
+		sfe, ok := g.fileMap.GetEntry(hash32)
+		if ok {
+			dataReply = g.makeDataReply(origin, sfe.GetMetafile(), hash32)
+		} else {
+			chunk, ok := g.chunkMap.GetChunk(hash32)
+			if !ok {
+				fmt.Printf("No valid metafile/chunk found matching hash value '%x'\n", hash32)
+				return nil, false
+			}
+			dataReply = g.makeDataReply(origin, chunk, hash32)
+		}
+	*/
 	return dataReply, true
 }
 
@@ -172,6 +181,7 @@ func (g *Gossiper) clientFileShareListenRoutine(cFileShareUI chan string) {
 		chunksMap, metafile, metahash := fileparsing.CreateChunksMap(chunks)
 		g.fileMap.AddEntry(fileName, size, metafile, metahash)
 
+		g.chunkMap.AddChunk(metahash, metafile)
 		for checksum, chunk := range chunksMap {
 			g.chunkMap.AddChunk(checksum, chunk)
 		}
