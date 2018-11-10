@@ -4,6 +4,7 @@ import "github.com/mvidigueira/Peerster/dto"
 
 //UI (frontend) functionality
 
+//FrontEndMessage - eases frontend message display
 type FrontEndMessage struct {
 	Origin string
 	Text   string
@@ -36,6 +37,7 @@ func (g *Gossiper) GetOriginsList() []string {
 	return g.origins.GetArrayCopy()
 }
 
+//ConvertToFEMList - converts an array of RumorMessage to an array of FrontEndMessage
 func ConvertToFEMList(rmList []dto.RumorMessage) (femList []FrontEndMessage) {
 	femList = make([]FrontEndMessage, len(rmList))
 	var msgType string
