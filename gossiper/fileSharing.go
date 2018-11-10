@@ -50,19 +50,6 @@ func (g *Gossiper) answerDataRequest(origin string, hash []byte) (dataReply *dto
 	}
 	dataReply = g.makeDataReply(origin, chunk, hash32)
 
-	/*
-		sfe, ok := g.fileMap.GetEntry(hash32)
-		if ok {
-			dataReply = g.makeDataReply(origin, sfe.GetMetafile(), hash32)
-		} else {
-			chunk, ok := g.chunkMap.GetChunk(hash32)
-			if !ok {
-				fmt.Printf("No valid metafile/chunk found matching hash value '%x'\n", hash32)
-				return nil, false
-			}
-			dataReply = g.makeDataReply(origin, chunk, hash32)
-		}
-	*/
 	return dataReply, true
 }
 
@@ -100,9 +87,11 @@ func (g *Gossiper) downloadFile(nameToSave string, metahash [32]byte, origin str
 	metafile := g.downloadChunk(metahash, origin)
 	chunkHashes, ok := fileparsing.ParseMetafile(metafile)
 	if !ok {
-		fmt.Printf("Download FAILED\n")
+		fmt.Printf("Invalid Metafile. Download FAILED\n")
 		return false
 	}
+
+	g.chunkMap.AddChunk(metahash, metafile)
 
 	chunks := make([][]byte, len(chunkHashes))
 	var size = 0
@@ -110,7 +99,7 @@ func (g *Gossiper) downloadFile(nameToSave string, metahash [32]byte, origin str
 		fmt.Printf("DOWNLOADING %s chunk %d from %s\n", nameToSave, i+1, origin)
 		chunks[i] = g.downloadChunk(hash, origin)
 		size += len(chunks[i])
-		g.chunkMap.AddChunk(hash, chunks[i])
+		g.chunkMap.AddChunk(hash, chunks[i]) //avoids reparsing whole file
 	}
 
 	fileparsing.WriteFileFromChunks(nameToSave, chunks)
@@ -130,11 +119,8 @@ func (g *Gossiper) dataRequestListenRoutine(cDataRequest chan *dto.PacketAddress
 		fmt.Printf("DATA REQUEST from %s for hashvalue %x\n", pap.GetOrigin(), pap.GetHashValue())
 
 		if pap.GetDestination() == g.name {
-			//fmt.Printf("THIS IS THE DESTINATION\n")
 			drep, ok := g.answerDataRequest(pap.GetOrigin(), pap.GetHashValue())
 			if ok {
-				//fmt.Printf("DATA REPLY CONSTRUCTION OK\n")
-				//fmt.Printf("Hash: %x, Data: %s\n", drep.HashValue, drep.Data)
 				replyPacket := &dto.GossipPacket{DataReply: drep}
 				g.forward(replyPacket)
 			}

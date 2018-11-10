@@ -5,6 +5,6 @@ Peerster
 /github.com*
 /tests/out/*
 /out/*
-/client/_Downloads/*
-/client/_SharedFiles/*
+/_Downloads/*
+/_SharedFiles/*
 

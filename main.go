@@ -55,21 +55,6 @@ func main() {
 	}
 }
 
-func privateMessageHandler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case "POST":
-		err := r.ParseForm()
-		if err != nil {
-			panic(err)
-		}
-		message := r.PostForm.Get("message")
-		dest := r.PostForm.Get("destName")
-
-		fmt.Printf("PM: %s, Destination: %s\n", message, dest)
-		sendPrivateUDP(dest, message)
-	}
-}
-
 func messageHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
@@ -135,6 +120,22 @@ func idHandler(w http.ResponseWriter, r *http.Request) {
 
 type jsonOrigin struct {
 	Name string
+}
+
+func privateMessageHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "POST":
+		err := r.ParseForm()
+		if err != nil {
+			panic(err)
+		}
+		message := r.PostForm.Get("message")
+		dest := r.PostForm.Get("destName")
+
+		if dest != "" {
+			sendPrivateUDP(dest, message)
+		}
+	}
 }
 
 func originsHandler(w http.ResponseWriter, r *http.Request) {

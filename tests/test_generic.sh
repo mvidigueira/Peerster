@@ -681,7 +681,7 @@ else
                                     echo -e "${WARNINGCOLOR}Node ${names[$i]} does not reconstruct file ${files[$j,$i,$k,0]} from ${names[$j]}${NC}"
                                 fi
                             fi
-                            if [[ $warning != true ]] && [[ $(diff "./client/_Downloads/${files[$j,$i,$k,0]}2" "./client/_SharedFiles/${files[$j,$i,$k,0]}") != "" ]]
+                            if [[ $warning != true ]] && [[ $(diff "./_Downloads/${files[$j,$i,$k,0]}2" "./_SharedFiles/${files[$j,$i,$k,0]}") != "" ]]
                             then
                                 warning=true
                                 if [[ $DEBUG = true ]]

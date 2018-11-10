@@ -7,7 +7,7 @@ import (
 	"github.com/mvidigueira/Peerster/dto"
 )
 
-const defaultHopLimit = 11
+const defaultHopLimit = 10
 
 //updateDSDV - given a PacketAddressPair corresponding to a rumor message,
 //updates the routingTable aswell as the known origins

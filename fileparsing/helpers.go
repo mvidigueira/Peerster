@@ -8,8 +8,8 @@ import (
 	"os"
 )
 
-const shareBaseDir = "./client/_SharedFiles/"
-const dlBaseDir = "./client/_Downloads/"
+const shareBaseDir = "./_SharedFiles/"
+const dlBaseDir = "./_Downloads/"
 const defaultChunkSize = 8000 //8KiB or 8KB? Assumed KiB
 
 //ReadChunks - parses the file with the given name at 'shareBaseDir' into 'defaultChunkSize' sized chunks.
@@ -115,6 +115,7 @@ func ConvertToHash32(hash []byte) (hash32 [32]byte, ok bool) {
 	return hash32, true
 }
 
+//VerifyDataHash - returns true if the provided 'hash' matches the 'data''s SHA256 hash
 func VerifyDataHash(hash []byte, data []byte) (ok bool) {
 	if len(hash) != 32 {
 		fmt.Printf("SHA256 hash length mismatch. Is %v but should be 32.\n", len(hash))
