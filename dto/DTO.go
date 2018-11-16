@@ -94,14 +94,53 @@ func (drep *DataReply) DecrementHopCount() (shouldSend bool) {
 	return (drep.HopLimit > 0)
 }
 
+//SearchRequest - subtype of GossipPacket used for searching files on other peers
+type SearchRequest struct {
+	Origin   string
+	Budget   uint64
+	Keywords []string
+}
+
+//SearchReply - subtype of GossipPacket used for replying to file searches from other peers
+type SearchReply struct {
+	Origin      string
+	Destination string
+	HopLimit    uint32
+	Results     []*SearchResult
+}
+
+//SearchResult - subtype of Search Request used for replying to file searches from other peers
+type SearchResult struct {
+	FileName     string
+	MetafileHash []byte
+	ChunkMap     []uint64
+}
+
+//GetFileName - returns the name of the file
+func (sr *SearchResult) GetFileName() (fileName string) {
+	return sr.FileName
+}
+
+//GetMetahash - returns the hash of the file's metafile
+func (sr *SearchResult) GetMetahash() (metahash []byte) {
+	return sr.MetafileHash
+}
+
+//GetChunkMap - returns the chunkMap for that file (list of indexes of owned chunks for that file)
+func (sr *SearchResult) GetChunkMap() (chunkMap []uint64) {
+	return sr.ChunkMap
+}
+
 //GossipPacket - protocol structure to be serialized and sent between peers
 type GossipPacket struct {
-	Simple      *SimpleMessage
-	Rumor       *RumorMessage
-	Status      *StatusPacket
-	Private     *PrivateMessage
-	DataRequest *DataRequest
-	DataReply   *DataReply
+	Simple        *SimpleMessage
+	Rumor         *RumorMessage
+	Status        *StatusPacket
+	Private       *PrivateMessage
+	DataRequest   *DataRequest
+	DataReply     *DataReply
+	SearchRequest *SearchRequest
+	SearchReply   *SearchReply
 }
 
 //GetUnderlyingType - returns the underlying type of the gossip packet, or the empty string in case of no subtype
@@ -118,6 +157,10 @@ func (g *GossipPacket) GetUnderlyingType() (subtype string) {
 		subtype = "datarequest"
 	} else if g.DataReply != nil {
 		subtype = "datareply"
+	} else if g.SearchRequest != nil {
+		subtype = "searchrequest"
+	} else if g.SearchReply != nil {
+		subtype = "searchreply"
 	} else {
 		subtype = ""
 	}
@@ -150,6 +193,10 @@ func (g *GossipPacket) GetOrigin() (origin string) {
 		origin = g.DataRequest.Origin
 	case "datareply":
 		origin = g.DataReply.Origin
+	case "searchrequest":
+		origin = g.SearchRequest.Origin
+	case "searchreply":
+		origin = g.SearchReply.Origin
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
 		LogError(err)
@@ -178,6 +225,14 @@ func (g *GossipPacket) GetSeqID() (id uint32) {
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract ID from a DATA REPLY message"}
 		debug.PrintStack()
 		LogError(err)
+	case "searchrequest":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract ID from a SEARCH REQUEST message"}
+		debug.PrintStack()
+		LogError(err)
+	case "searchreply":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract ID from a SEARCH REPLY message"}
+		debug.PrintStack()
+		LogError(err)
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
 		LogError(err)
@@ -201,6 +256,12 @@ func (g *GossipPacket) GetContents() (contents string) {
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract contents from a DATA REQUEST message"}
 		LogError(err)
 	case "datareply":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract contents from a DATA REPLY message"}
+		LogError(err)
+	case "searchrequest":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract contents from a DATA REPLY message"}
+		LogError(err)
+	case "searchreply":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract contents from a DATA REPLY message"}
 		LogError(err)
 	default:
@@ -228,6 +289,11 @@ func (g *GossipPacket) GetHopLimit() (limit uint32) {
 		limit = g.DataRequest.HopLimit
 	case "datareply":
 		limit = g.DataReply.HopLimit
+	case "searchrequest":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract hop-limit from a SEARCH REQUEST message"}
+		LogError(err)
+	case "searchreply":
+		limit = g.SearchReply.HopLimit
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
 		LogError(err)
@@ -253,6 +319,11 @@ func (g *GossipPacket) GetDestination() (dest string) {
 		dest = g.DataRequest.Destination
 	case "datareply":
 		dest = g.DataReply.Destination
+	case "searchrequest":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract destination from a SEARCH REQUEST message"}
+		LogError(err)
+	case "searchreply":
+		dest = g.SearchReply.Destination
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
 		LogError(err)
@@ -279,6 +350,12 @@ func (g *GossipPacket) GetHashValue() (hash []byte) {
 		hash = g.DataRequest.HashValue
 	case "datareply":
 		hash = g.DataReply.HashValue
+	case "searchrequest":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract hash value from a SEARCH REQUEST message"}
+		LogError(err)
+	case "searchreply":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract hash value from a SEARCH REPLY message"}
+		LogError(err)
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
 		LogError(err)
@@ -306,6 +383,12 @@ func (g *GossipPacket) GetData() (data []byte) {
 		LogError(err)
 	case "datareply":
 		data = g.DataReply.Data
+	case "searchrequest":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract data from a SEARCH REQUEST message"}
+		LogError(err)
+	case "searchreply":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract data from a SEARCH REPLY message"}
+		LogError(err)
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
 		LogError(err)
@@ -331,6 +414,111 @@ func (g *GossipPacket) DecrementHopCount() (shouldSend bool) {
 		shouldSend = g.DataRequest.DecrementHopCount()
 	case "datareply":
 		shouldSend = g.DataReply.DecrementHopCount()
+	case "searchrequest":
+		err := &GossipPacketError{When: time.Now(), What: "Can't decrement hop count from a SEARCH REQUEST message"}
+		LogError(err)
+	case "searchreply":
+		err := &GossipPacketError{When: time.Now(), What: "Can't decrement hop count from a SEARCH REPLY message"}
+		LogError(err)
+	default:
+		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
+		LogError(err)
+	}
+	return
+}
+
+//GetBudget - returns the budget (uint64) of the gossip packet (Search Request only)
+func (g *GossipPacket) GetBudget() (budget uint64) {
+	switch subtype := g.GetUnderlyingType(); subtype {
+	case "simple":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract budget from a SIMPLE message"}
+		LogError(err)
+	case "rumor":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract budget from a RUMOR message"}
+		LogError(err)
+	case "status":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract budget from a STATUS message"}
+		LogError(err)
+	case "private":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract budget from a PRIVATE message"}
+		LogError(err)
+	case "datarequest":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract budget from a DATA REQUEST message"}
+		LogError(err)
+	case "datareply":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract budget from a DATA REPLY message"}
+		LogError(err)
+	case "searchrequest":
+		budget = g.SearchRequest.Budget
+	case "searchreply":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract budget from a SEARCH REPLY message"}
+		LogError(err)
+	default:
+		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
+		LogError(err)
+	}
+	return
+}
+
+//GetKeywords - returns the keywords ([]string) of the gossip packet (Search Request only)
+func (g *GossipPacket) GetKeywords() (keywords []string) {
+	switch subtype := g.GetUnderlyingType(); subtype {
+	case "simple":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract keywords from a SIMPLE message"}
+		LogError(err)
+	case "rumor":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract keywords from a RUMOR message"}
+		LogError(err)
+	case "status":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract keywords from a STATUS message"}
+		LogError(err)
+	case "private":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract keywords from a PRIVATE message"}
+		LogError(err)
+	case "datarequest":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract keywords from a DATA REQUEST message"}
+		LogError(err)
+	case "datareply":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract keywords from a DATA REPLY message"}
+		LogError(err)
+	case "searchrequest":
+		keywords = g.SearchRequest.Keywords
+	case "searchreply":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract keywords from a SEARCH REPLY message"}
+		LogError(err)
+	default:
+		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
+		LogError(err)
+	}
+	return
+}
+
+//GetSearchResults - returns the search results ([]*SearchResult) of the gossip packet (Search Reply only)
+func (g *GossipPacket) GetSearchResults() (results []*SearchResult) {
+	switch subtype := g.GetUnderlyingType(); subtype {
+	case "simple":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract search results from a SIMPLE message"}
+		LogError(err)
+	case "rumor":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract search results from a RUMOR message"}
+		LogError(err)
+	case "status":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract search results from a STATUS message"}
+		LogError(err)
+	case "private":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract search results from a PRIVATE message"}
+		LogError(err)
+	case "datarequest":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract search results from a DATA REQUEST message"}
+		LogError(err)
+	case "datareply":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract search results from a DATA REPLY message"}
+		LogError(err)
+	case "searchrequest":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract search results from a SEARCH REQUEST message"}
+		LogError(err)
+	case "searchreply":
+		results = g.SearchReply.Results
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
 		LogError(err)
@@ -393,6 +581,21 @@ func (pap *PacketAddressPair) GetData() []byte {
 //DecrementHopCount - returns true if positive hop count after decrement
 func (pap *PacketAddressPair) DecrementHopCount() bool {
 	return pap.Packet.DecrementHopCount()
+}
+
+//GetBudget - returns the budget (uint64) of the PacketAddressPair
+func (pap *PacketAddressPair) GetBudget() uint64 {
+	return pap.Packet.GetBudget()
+}
+
+//GetKeywords - returns the keywords ([]string) of the PacketAddressPair
+func (pap *PacketAddressPair) GetKeywords() []string {
+	return pap.Packet.GetKeywords()
+}
+
+//GetSearchResults - returns the search results ([]*SearchResult) of the PacketAddressPair
+func (pap *PacketAddressPair) GetSearchResults() []*SearchResult {
+	return pap.Packet.GetSearchResults()
 }
 
 //GetSenderAddress - returns the sender address of the PacketAddressPair
