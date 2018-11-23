@@ -2,6 +2,10 @@ package fileparsing
 
 import (
 	"sync"
+
+	"github.com/mvidigueira/Peerster/dto"
+
+	"github.com/mvidigueira/Peerster/filesearching"
 )
 
 //SafeFileMap - for keeping file information
@@ -30,4 +34,22 @@ func (sfm *SafeFileMap) GetEntry(metahash [32]byte) (sfe *SafeFileEntry, ok bool
 		return nil, ok
 	}
 	return sfei.(*SafeFileEntry), ok
+}
+
+//GetMatches - returns a list of search results for file names matching at least one of the keywords (substring)
+func (sfm *SafeFileMap) GetMatches(keywords []string) (sress []dto.SearchResult) {
+	sress = make([]dto.SearchResult, 0)
+
+	keywordMatcher := func(metahashI interface{}, sfeI interface{}) bool {
+		sfe := sfeI.(*SafeFileEntry)
+		name, _, _, metahash, chunkIndices := sfe.SafeGetContents()
+		if filesearching.ContainsKeyword(name, keywords) {
+			sres := dto.SearchResult{FileName: name, MetafileHash: metahash[:], ChunkMap: chunkIndices}
+			sress = append(sress, sres)
+		}
+		return true
+	}
+	sfm.filesMap.Range(keywordMatcher)
+
+	return
 }

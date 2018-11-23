@@ -1,34 +1,49 @@
 package fileparsing
 
+import (
+	"sort"
+	"sync"
+)
+
 //SafeFileEntry - for keeping information per file
 type SafeFileEntry struct {
-	name     string
-	size     int
-	metafile []byte
-	metahash [32]byte
+	name         string
+	size         int
+	metafile     []byte
+	metahash     [32]byte
+	chunkIndices []uint64
+	mux          sync.RWMutex
 }
 
 //NewSafeFileEntry - for the creation of SafeFileEntry
 func NewSafeFileEntry(name string, size int, metafile []byte, metahash [32]byte) *SafeFileEntry {
-	return &SafeFileEntry{name: name, size: size, metafile: metafile, metahash: metahash}
+	chunkNum := len(metafile) / 32
+	return &SafeFileEntry{name: name, size: size, metafile: metafile, metahash: metahash, chunkIndices: make([]uint64, chunkNum), mux: sync.RWMutex{}}
 }
 
-//GetName - returns the SafeFileEntry's file name
-func (sfe *SafeFileEntry) GetName() string {
-	return sfe.name
+//SafeGetContents - atomically retrieves contents of SafeFileEntry
+func (sfe *SafeFileEntry) SafeGetContents() (name string, size int, metafile []byte, metahash [32]byte, chunkIndices []uint64) {
+	sfe.mux.RLock()
+	defer sfe.mux.RUnlock()
+	name = sfe.name
+	size = sfe.size
+	metafile = sfe.metafile
+	metahash = sfe.metahash
+	chunkIndices = sfe.chunkIndices
+	sort.Slice(chunkIndices, func(i, j int) bool { return chunkIndices[i] < chunkIndices[j] })
+	return
 }
 
-//GetSize - returns the SafeFileEntry's file size
-func (sfe *SafeFileEntry) GetSize() int {
-	return sfe.size
+//SafeSetSize - atomically changes the SafeFileEntry's size field to 'newSize'
+func (sfe *SafeFileEntry) SafeSetSize(newSize int) {
+	sfe.mux.Lock()
+	defer sfe.mux.Unlock()
+	sfe.size = newSize
 }
 
-//GetMetafile - returns the SafeFileEntry's metafile
-func (sfe *SafeFileEntry) GetMetafile() []byte {
-	return sfe.metafile
-}
-
-//GetMetahash - returns the SafeFileEntry's metafile's hash (metahash)
-func (sfe *SafeFileEntry) GetMetahash() [32]byte {
-	return sfe.metahash
+//SafeAddChunkIndex - atomically adds a chunk index to the SafeFileEntry's chunkIndices
+func (sfe *SafeFileEntry) SafeAddChunkIndex(index uint64) {
+	sfe.mux.Lock()
+	defer sfe.mux.Unlock()
+	sfe.chunkIndices = append(sfe.chunkIndices, index)
 }

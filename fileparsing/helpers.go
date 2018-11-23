@@ -10,7 +10,7 @@ import (
 
 const shareBaseDir = "./_SharedFiles/"
 const dlBaseDir = "./_Downloads/"
-const defaultChunkSize = 8000 //8KiB or 8KB? Assumed KiB
+const defaultChunkSize = 8192 //8KiB or 8KB? Assumed KiB
 
 //ReadChunks - parses the file with the given name at 'shareBaseDir' into 'defaultChunkSize' sized chunks.
 //Returns the array of chunks, the total size (in bytes) of the file, and an error (if any ocurred).
@@ -124,4 +124,13 @@ func VerifyDataHash(hash []byte, data []byte) (ok bool) {
 	var hash32 [32]byte
 	copy(hash32[:], hash)
 	return hash32 == sha256.Sum256(data)
+}
+
+//EstimateFileSize - provides an estimate of the file size (always greater than actual size)
+func EstimateFileSize(metafile []byte) (estimatedSize int) {
+	if len(metafile)%32 != 0 {
+		fmt.Printf("Bad metafile: Undivisable by 32\n")
+		return -1
+	}
+	return len(metafile) / 32 * defaultChunkSize
 }

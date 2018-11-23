@@ -88,22 +88,27 @@ func (g *Gossiper) downloadFile(nameToSave string, metahash [32]byte, origin str
 	chunkHashes, ok := fileparsing.ParseMetafile(metafile)
 	if !ok {
 		fmt.Printf("Invalid Metafile. Download FAILED\n")
+		g.dlFilesSet.Delete(metahash)
 		return false
 	}
 
 	g.chunkMap.AddChunk(metahash, metafile)
+	estimatedSize := fileparsing.EstimateFileSize(metafile)
+	g.fileMap.AddEntry(nameToSave, estimatedSize, metafile, metahash)
+	sfe, _ := g.fileMap.GetEntry(metahash)
 
 	chunks := make([][]byte, len(chunkHashes))
-	var size = 0
+	var actualSize = 0
 	for i, hash := range chunkHashes {
 		fmt.Printf("DOWNLOADING %s chunk %d from %s\n", nameToSave, i+1, origin)
 		chunks[i] = g.downloadChunk(hash, origin)
-		size += len(chunks[i])
+		actualSize += len(chunks[i])
 		g.chunkMap.AddChunk(hash, chunks[i]) //avoids reparsing whole file
+		sfe.SafeAddChunkIndex(uint64(i + 1)) //TODO: check if + 1 is necessary or not
 	}
 
+	sfe.SafeSetSize(actualSize)
 	fileparsing.WriteFileFromChunks(nameToSave, chunks)
-	g.fileMap.AddEntry(nameToSave, size, metafile, metahash)
 	fmt.Printf("RECONSTRUCTED file %s\n", nameToSave)
 
 	g.dlFilesSet.Delete(metahash)

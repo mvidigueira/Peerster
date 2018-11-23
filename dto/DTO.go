@@ -116,6 +116,11 @@ type SearchResult struct {
 	ChunkMap     []uint64
 }
 
+//IsFullMatch - Whether the SearchResult has a complete chunkMap or not
+func (sres *SearchResult) IsFullMatch() bool {
+	return true
+}
+
 //GetFileName - returns the name of the file
 func (sr *SearchResult) GetFileName() (fileName string) {
 	return sr.FileName
