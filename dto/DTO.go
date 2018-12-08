@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log"
-	"runtime/debug"
 	"time"
 )
 
@@ -278,6 +277,12 @@ func (g *GossipPacket) GetOrigin() (origin string) {
 		origin = g.SearchRequest.Origin
 	case "searchreply":
 		origin = g.SearchReply.Origin
+	case "txpublish":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract origin name from a TXPUBLISH message"}
+		LogError(err)
+	case "blockpublish":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract origin name from a BLOCKPUBLISH message"}
+		LogError(err)
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
 		LogError(err)
@@ -300,19 +305,21 @@ func (g *GossipPacket) GetSeqID() (id uint32) {
 		id = g.Private.ID
 	case "datarequest":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract ID from a DATA REQUEST message"}
-		debug.PrintStack()
 		LogError(err)
 	case "datareply":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract ID from a DATA REPLY message"}
-		debug.PrintStack()
 		LogError(err)
 	case "searchrequest":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract ID from a SEARCH REQUEST message"}
-		debug.PrintStack()
 		LogError(err)
 	case "searchreply":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract ID from a SEARCH REPLY message"}
-		debug.PrintStack()
+		LogError(err)
+	case "txpublish":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract ID from a TXPUBLISH message"}
+		LogError(err)
+	case "blockpublish":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract ID from a BLOCKPUBLISH message"}
 		LogError(err)
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
@@ -345,6 +352,12 @@ func (g *GossipPacket) GetContents() (contents string) {
 	case "searchreply":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract contents from a DATA REPLY message"}
 		LogError(err)
+	case "txpublish":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract contents from a TXPUBLISH message"}
+		LogError(err)
+	case "blockpublish":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract contents from a BLOCKPUBLISH message"}
+		LogError(err)
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
 		LogError(err)
@@ -375,6 +388,10 @@ func (g *GossipPacket) GetHopLimit() (limit uint32) {
 		LogError(err)
 	case "searchreply":
 		limit = g.SearchReply.HopLimit
+	case "txpublish":
+		limit = g.TxPublish.HopLimit
+	case "blockpublish":
+		limit = g.BlockPublish.HopLimit
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
 		LogError(err)
@@ -405,6 +422,12 @@ func (g *GossipPacket) GetDestination() (dest string) {
 		LogError(err)
 	case "searchreply":
 		dest = g.SearchReply.Destination
+	case "txpublish":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract destination from a TXPUBLISH message"}
+		LogError(err)
+	case "blockpublish":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract destination from a BLOCKPUBLISH message"}
+		LogError(err)
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
 		LogError(err)
@@ -436,6 +459,12 @@ func (g *GossipPacket) GetHashValue() (hash []byte) {
 		LogError(err)
 	case "searchreply":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract hash value from a SEARCH REPLY message"}
+		LogError(err)
+	case "txpublish":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract hash value from a TXPUBLISH message"}
+		LogError(err)
+	case "blockpublish":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract hash value from a BLOCKPUBLISH message"}
 		LogError(err)
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
@@ -470,6 +499,12 @@ func (g *GossipPacket) GetData() (data []byte) {
 	case "searchreply":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract data from a SEARCH REPLY message"}
 		LogError(err)
+	case "txpublish":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract data from a TXPUBLISH message"}
+		LogError(err)
+	case "blockpublish":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract data from a BLOCKPUBLISH message"}
+		LogError(err)
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
 		LogError(err)
@@ -500,6 +535,10 @@ func (g *GossipPacket) DecrementHopCount() (shouldSend bool) {
 		LogError(err)
 	case "searchreply":
 		shouldSend = g.SearchReply.DecrementHopCount()
+	case "txpublish":
+		shouldSend = g.TxPublish.DecrementHopCount()
+	case "blockpublish":
+		shouldSend = g.BlockPublish.DecrementHopCount()
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
 		LogError(err)
@@ -532,6 +571,12 @@ func (g *GossipPacket) GetBudget() (budget uint64) {
 		budget = g.SearchRequest.Budget
 	case "searchreply":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract budget from a SEARCH REPLY message"}
+		LogError(err)
+	case "txpublish":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract budget from a TXPUBLISH message"}
+		LogError(err)
+	case "blockpublish":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract budget from a BLOCKPUBLISH message"}
 		LogError(err)
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
@@ -566,6 +611,12 @@ func (g *GossipPacket) GetKeywords() (keywords []string) {
 	case "searchreply":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract keywords from a SEARCH REPLY message"}
 		LogError(err)
+	case "txpublish":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract keywords from a TXPUBLISH message"}
+		LogError(err)
+	case "blockpublish":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract keywords from a BLOCKPUBLISH message"}
+		LogError(err)
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
 		LogError(err)
@@ -599,6 +650,12 @@ func (g *GossipPacket) GetSearchResults() (results []*SearchResult) {
 		LogError(err)
 	case "searchreply":
 		results = g.SearchReply.Results
+	case "txpublish":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract search results from a TXPUBLISH message"}
+		LogError(err)
+	case "blockpublish":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract search results from a BLOCKPUBLISH message"}
+		LogError(err)
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
 		LogError(err)

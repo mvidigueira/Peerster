@@ -47,6 +47,8 @@ type Gossiper struct {
 	searchMap                *filesearching.SafeSearchMap
 	filenamesMap             *filesearching.SafeFilenamesMap
 	matchesGUImap            *dto.SafeHashFilenamePairArray
+
+	blockchainLedger *BlockchainLedger
 }
 
 //NewGossiper creates a new gossiper
@@ -89,6 +91,8 @@ func NewGossiper(address, name string, UIport string, peers []string, simple boo
 		searchMap:                filesearching.NewSafeSearchMap(),
 		filenamesMap:             filesearching.NewSafefileNamesMap(),
 		matchesGUImap:            dto.NewSafeHashFilenamePairArray(),
+
+		blockchainLedger: NewBlockchainLedger(),
 	}
 }
 
@@ -114,7 +118,11 @@ func (g *Gossiper) Start() {
 	cSearchReply := make(chan *dto.PacketAddressPair)
 	go g.searchReplyListenRoutine(cSearchReply)
 
-	go g.receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, cDataReply, cSearcRequest, cSearchReply)
+	cFileNaming := make(chan *dto.PacketAddressPair) //blockchain
+	cBlocks := make(chan *dto.PacketAddressPair)     //blockchain
+	go g.blockchainMiningRoutine(cFileNaming, cBlocks)
+
+	go g.receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, cDataReply, cSearcRequest, cSearchReply, cFileNaming, cBlocks)
 	go g.antiEntropy()
 
 	go g.periodicRouteRumor() //DSDV
@@ -125,7 +133,7 @@ func (g *Gossiper) Start() {
 	go g.clientPMListenRoutine(cUIPM)
 
 	cFileShare := make(chan string)
-	go g.clientFileShareListenRoutine(cFileShare)
+	go g.clientFileShareListenRoutine(cFileShare, cFileNaming)
 	cFileDL := make(chan *dto.FileToDownload)
 	go g.clientFileDownloadListenRoutine(cFileDL)
 
@@ -223,7 +231,7 @@ func (g *Gossiper) receiveClientUDP(cRumoring, cPMing chan *dto.PacketAddressPai
 
 //receiveExternalUDP - receives gossip packets from PEERS and forwards them to the appropriate channel
 //among those provided, depending on whether they are rumor, simple or status packets
-func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, cDataReply, cSearcRequest, cSearchReply chan *dto.PacketAddressPair) {
+func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, cDataReply, cSearcRequest, cSearchReply, cFileNaming, cBlocks chan *dto.PacketAddressPair) {
 	for {
 		packet := &dto.GossipPacket{}
 		packetBytes := make([]byte, packetSize)
@@ -287,6 +295,18 @@ func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, c
 				log.Println("Running on 'simple' mode. Ignoring searchreply message from " + senderAddress + "...")
 			} else {
 				cSearchReply <- pap
+			}
+		case "txpublish":
+			if g.UseSimple {
+				log.Println("Running on 'simple' mode. Ignoring txpublish message from " + senderAddress + "...")
+			} else {
+				cFileNaming <- pap
+			}
+		case "blockpublish":
+			if g.UseSimple {
+				log.Println("Running on 'simple' mode. Ignoring blockpublish message from " + senderAddress + "...")
+			} else {
+				cBlocks <- pap
 			}
 		default:
 			log.Println("Unrecognized message type. Ignoring message from " + senderAddress + "...")

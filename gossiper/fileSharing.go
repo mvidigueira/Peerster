@@ -179,7 +179,7 @@ func (g *Gossiper) dataReplyListenRoutine(cDataReply chan *dto.PacketAddressPair
 }
 
 //clientFileShareListenRoutine - deals with new fileShare messages from clients
-func (g *Gossiper) clientFileShareListenRoutine(cFileShareUI chan string) {
+func (g *Gossiper) clientFileShareListenRoutine(cFileShareUI chan string, cFileNaming chan *dto.PacketAddressPair) {
 	for fileName := range cFileShareUI {
 		fmt.Printf("Share request for file: %s\n", fileName)
 
@@ -197,6 +197,13 @@ func (g *Gossiper) clientFileShareListenRoutine(cFileShareUI chan string) {
 		}
 
 		fmt.Printf("Share request COMPLETED. File checksum: %x\n", metahash)
+
+		//blockchain
+		file := dto.File{Name: fileName, Size: int64(size), MetafileHash: metahash[:]}
+		txPub := &dto.TxPublish{File: file, HopLimit: defaultHopLimit}
+		packet := &dto.GossipPacket{TxPublish: txPub}
+		pap := &dto.PacketAddressPair{Packet: packet, SenderAddress: ""}
+		cFileNaming <- pap
 	}
 }
 
