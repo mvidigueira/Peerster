@@ -87,7 +87,7 @@
                 </div>
             </form>
             <form id="msgForm" action="/message" method="POST">
-                <label for="messageArea">New message:</label>
+                <label for="messageArea">New Gossip Message:</label>
                 <div class="row">
                     <div class="col-md-7">
                         <div class="form-group">
@@ -102,7 +102,7 @@
             <form id="privateMsgForm" action="/privatemessage" method="POST">
                 <div class="row">
                     <div class="col-md-4">
-                        <label for="privateMessageText">New private message:</label>
+                        <label for="privateMessageText">New Private Message:</label>
                     </div>
                     <div class="col-md-3">
                         <label for="pmDestination">Available Destinations:</label>
@@ -138,7 +138,7 @@
                     </div>
                 </div>
             </form>
-            <label >Download file</label>
+            <label >Download file from specific node</label>
             <form id="fileDownloadingForm" action="/dlfile" method="POST">
                 <div class="row">
                     <div class="col-md-4">
@@ -172,6 +172,45 @@
                     </div>
                 </div>
             </form>
+            <label >Search file</label>
+            <form id="fileSearchingForm" action="/searchfile" method="POST">
+                <div class="row">
+                    <div class="col-md-4">
+                        <label for="srchKeywords">Comma separated keywords (space sensitive):</label>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="srchBudget">Budget (0 is expanding ring):</label>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <textarea class="form-control" id="srchKeywords" rows="1" placeholder="cate,doge"></textarea>
+                        </div> 
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <input type="text" class="form-control" id="srchBudget"></input>
+                        </div> 
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-primary">Search</button>
+                    </div>
+                </div>
+            </form>
+            <div class="col-md-9">
+                <h3>Files List</h3>
+                <div class="table-wrapper-scroll-y" >
+                    <table data-toggle="table" id="filesTable" data-url='/searchmatches'>
+                            <thead>
+                                <tr>
+                                    <th data-field="Filename">Filename</th>
+                                    <th data-field="Metahash">Metahash</th>
+                                </tr>
+                            </thead>
+                    </table>
+                </div>
+            </div>
         </div>
     </body>
 </html>

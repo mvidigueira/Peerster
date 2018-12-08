@@ -132,7 +132,7 @@ func (g *Gossiper) searchReplyListenRoutine(cDataReply chan *dto.PacketAddressPa
 		fmt.Printf("RECEIVED SEARCH REPLY to %v, hops: %v\n", pap.GetDestination(), pap.GetHopLimit())
 
 		if pap.GetDestination() == g.name {
-			fmt.Printf("THIS IS THE DESTINATION\n")
+			//fmt.Printf("THIS IS THE DESTINATION\n")
 			sress := pap.GetSearchResults()
 			for _, sres := range sress {
 				hash32, ok := fileparsing.ConvertToHash32(sres.MetafileHash)
@@ -141,9 +141,11 @@ func (g *Gossiper) searchReplyListenRoutine(cDataReply chan *dto.PacketAddressPa
 				}
 
 				var madeAnyMatch bool
-				totalMatch := g.metahashToChunkOwnersMap.UpdateWithSearchResult(pap.GetOrigin(), sres)
-
-				if totalMatch {
+				madeTotalMatch, hasTotalMatch := g.metahashToChunkOwnersMap.UpdateWithSearchResult(pap.GetOrigin(), sres)
+				if hasTotalMatch {
+					g.matchesGUImap.AppendUniqueToArray(hash32, sres.GetFileName())
+				}
+				if madeTotalMatch {
 					arr, _ := g.filenamesMap.GetMapping(hash32)
 					//fmt.Printf("array: %v\n", arr.GetArrayCopy())
 					g.searchMap.InformListeners(arr.GetArrayCopy(), hash32)

@@ -1,4 +1,5 @@
 var peerCount = 0;
+var matchesCount = 0;
 
 $(document).ready(function() {
     $('#privateMsgForm').on('submit', function(e) {
@@ -58,6 +59,29 @@ $(document).ready(function() {
         });
     });
 
+    $('#fileSearchingForm').on('submit', function(e) {
+        e.preventDefault();
+        var keywords_ = $("textarea#srchKeywords").val();
+        var budget_ = $("input#srchBudget").val();
+        console.log("here")
+        $.ajax({
+            type: $(this).attr('method'),
+            url: $(this).attr('action'),
+            data: {keywords:keywords_, budget:budget_},
+        });
+    });
+
+    $('#filesTable').on('dbl-click-row.bs.table', function (e, row, $element) {
+        console.log(row);
+        hash = row.Metahash
+        fileName = row.Filename
+        $.ajax({
+            type: "POST",
+            url: "/dlfile",
+            data: {file: fileName, metahash:hash, origin: ""},
+        });
+    });
+
     loadTables()
 });
 
@@ -90,6 +114,12 @@ function loadTables() {
             options[options.length] = new Option(value.Name, value.Name);
         });
         sel.val(selectedOption);
+    });
+
+    $.getJSON("/searchmatches", function(d, status) {
+        $('#filesTable').bootstrapTable({
+            data: d
+        });
     });
 }
 
@@ -131,5 +161,12 @@ window.setInterval(function() {
         sel2.val(selectedOption2);
 
         //$('#pmDestination').html("Peerster Client User Interface - " + d);
+    });
+
+    $.getJSON("/searchmatches", function(d, status) {
+        if(d.length > matchesCount) {
+            matchesCount = d.length
+            $('#filesTable').bootstrapTable("refresh", d)
+        }
     });
 }, 1000);

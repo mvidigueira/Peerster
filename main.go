@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"protobuf"
+	"strconv"
 	"strings"
 
 	"github.com/mvidigueira/Peerster/dto"
@@ -49,6 +50,9 @@ func main() {
 
 	http.HandleFunc("/sharefile", shareFileHandler)
 	http.HandleFunc("/dlfile", downloadFileHandler)
+
+	http.HandleFunc("/searchfile", searchFileHandler)
+	http.HandleFunc("/searchmatches", matchesFoundHandler)
 	for {
 		err := http.ListenAndServe("localhost:"+*UIPort, nil)
 		panic(err)
@@ -182,11 +186,48 @@ func downloadFileHandler(w http.ResponseWriter, r *http.Request) {
 
 		if fileName == "" {
 			fmt.Printf("DL Request error: File Save As name empty\n")
-		} else if from == "" {
-			fmt.Printf("DL Request error: origin name empty\n")
 		} else {
 			sendFileDownloadUDP(fileName, from, metahash)
 		}
+	}
+}
+
+func searchFileHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "POST":
+		err := r.ParseForm()
+		if err != nil {
+			panic(err)
+		}
+		keywords := r.PostFormValue("keywords")
+		budgetS := r.PostFormValue("budget")
+
+		budget, err := strconv.Atoi(budgetS)
+
+		if keywords == "" {
+			fmt.Printf("Search Request error: No Keywords\n")
+		} else if err != nil {
+			fmt.Printf("Invalid budget. Must be Integer.\n")
+		} else if budget < 0 {
+			fmt.Printf("Invalid budget. Must be non negative.\n")
+		} else {
+			sendFileSearchUDP(keywords, uint64(budget))
+		}
+	}
+}
+
+func matchesFoundHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "GET":
+		matches := g.GetMatchesList()
+
+		testJSON, err := json.Marshal(matches)
+		if err != nil {
+			panic(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(testJSON)
 	}
 }
 
@@ -243,6 +284,19 @@ func sendFileDownloadUDP(saveAs string, from string, metahash string) {
 	}
 	fileToDownload := &dto.FileToDownload{FileName: saveAs, Origin: from, Metahash: hash32}
 	request := &dto.ClientRequest{FileDownload: fileToDownload}
+	packetBytes, _ := protobuf.Encode(request)
+
+	conn.WriteToUDP(packetBytes, addrGossiper)
+	conn.Close()
+}
+
+func sendFileSearchUDP(keywords string, budget uint64) {
+	addr, _ := net.ResolveUDPAddr("udp4", "localhost:5500")
+	addrGossiper, _ := net.ResolveUDPAddr("udp4", "localhost:"+uiport)
+	conn, _ := net.ListenUDP("udp4", addr)
+
+	file2search := &dto.FileToSearch{Budget: budget, Keywords: strings.Split(keywords, ",")}
+	request := &dto.ClientRequest{FileSearch: file2search}
 	packetBytes, _ := protobuf.Encode(request)
 
 	conn.WriteToUDP(packetBytes, addrGossiper)

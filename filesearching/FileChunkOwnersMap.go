@@ -19,13 +19,13 @@ func NewMetahashToChunkOwnersMap() *MetahashToChunkOwnersMap {
 }
 
 //UpdateWithSearchResult - updates the underlying maps given
-func (mtcom *MetahashToChunkOwnersMap) UpdateWithSearchResult(origin string, sr *dto.SearchResult) (madeTotalMatch bool) {
+func (mtcom *MetahashToChunkOwnersMap) UpdateWithSearchResult(origin string, sr *dto.SearchResult) (madeTotalMatch bool, hasTotalMatch bool) {
 	hash32, ok := fileparsing.ConvertToHash32(sr.MetafileHash)
 	if ok {
 		//fmt.Printf("chunkCount: %v\n", sr.ChunkCount)
 		comi, _ := mtcom.chunkOwnersMaps.LoadOrStore(hash32, NewChunkOwnersMap(sr.ChunkCount))
 		com := comi.(*ChunkOwnersMap)
-		madeTotalMatch = com.UpdateMap(origin, sr.ChunkMap)
+		madeTotalMatch, hasTotalMatch = com.UpdateMap(origin, sr.ChunkMap)
 	}
 	return
 }
@@ -54,7 +54,7 @@ func NewChunkOwnersMap(numChunks uint64) *ChunkOwnersMap {
 }
 
 //UpdateMap - updates map information on what origins have those chunks
-func (com *ChunkOwnersMap) UpdateMap(origin string, chunkMap []uint64) (madeTotalMatch bool) {
+func (com *ChunkOwnersMap) UpdateMap(origin string, chunkMap []uint64) (madeTotalMatch bool, hasTotalMatch bool) {
 	com.mux.Lock()
 	defer com.mux.Unlock()
 	hadTotalMatch := len(com.chunkOwners) == int(com.numChunks)
@@ -68,13 +68,13 @@ func (com *ChunkOwnersMap) UpdateMap(origin string, chunkMap []uint64) (madeTota
 			com.chunkOwners[v] = dto.NewSafeStringArray([]string{origin})
 		}
 	}
-	hasTotalMatch := len(com.chunkOwners) == int(com.numChunks)
+	hasTotalMatch = len(com.chunkOwners) == int(com.numChunks)
 	//fmt.Printf("hasTotalMatch %v\n", hasTotalMatch)
 	if (!hadTotalMatch) && hasTotalMatch {
 		//fmt.Printf("TRUE %v\n", hasTotalMatch)
-		return true
+		return true, hasTotalMatch
 	}
-	return false
+	return false, hasTotalMatch
 }
 
 //GetMapCopy - returns an atomic copy of the map

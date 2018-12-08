@@ -39,7 +39,7 @@ func (sfm *SafeFilenamesMap) GetMapping(metahash [32]byte) (arr *dto.SafeStringA
 	return nil, false
 }
 
-//GetMatches - returns a map of metahash and names with hashes with names matching at least one of the keywords (substring)
+//GetMatches - returns a map of metahash and (file)names matching at least one of the keywords (substring)
 func (sfm *SafeFilenamesMap) GetMatches(keywords []string) map[[32]byte]*dto.SafeStringArray {
 	mp := make(map[[32]byte]*dto.SafeStringArray)
 
@@ -63,4 +63,14 @@ func (sfm *SafeFilenamesMap) GetMatches(keywords []string) map[[32]byte]*dto.Saf
 	sfm.filenamesMap.Range(keywordMatcher)
 
 	return mp
+}
+
+//GetAllMatches - returns a map of metahash and (file)names
+func (sfm *SafeFilenamesMap) GetAllMatches() (allMatches map[[32]byte][]string) {
+	allMatches = make(map[[32]byte][]string)
+	mp := sfm.GetMatches([]string{""})
+	for k, v := range mp {
+		allMatches[k] = v.GetArrayCopy()
+	}
+	return
 }

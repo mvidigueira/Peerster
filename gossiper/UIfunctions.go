@@ -51,3 +51,8 @@ func ConvertToFEMList(rmList []dto.RumorMessage) (femList []FrontEndMessage) {
 	}
 	return femList
 }
+
+//GetMatchesList - returns a MetahashFilenamePair array with all known matches in order
+func (g *Gossiper) GetMatchesList() []dto.MetahashFilenamePair {
+	return g.matchesGUImap.GetArrayCopy()
+}

@@ -46,6 +46,7 @@ type Gossiper struct {
 	metahashToChunkOwnersMap *filesearching.MetahashToChunkOwnersMap
 	searchMap                *filesearching.SafeSearchMap
 	filenamesMap             *filesearching.SafeFilenamesMap
+	matchesGUImap            *dto.SafeHashFilenamePairArray
 }
 
 //NewGossiper creates a new gossiper
@@ -87,6 +88,7 @@ func NewGossiper(address, name string, UIport string, peers []string, simple boo
 		metahashToChunkOwnersMap: filesearching.NewMetahashToChunkOwnersMap(),
 		searchMap:                filesearching.NewSafeSearchMap(),
 		filenamesMap:             filesearching.NewSafefileNamesMap(),
+		matchesGUImap:            dto.NewSafeHashFilenamePairArray(),
 	}
 }
 
