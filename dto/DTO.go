@@ -1,6 +1,8 @@
 package dto
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
 	"log"
 	"runtime/debug"
@@ -148,6 +150,62 @@ func (sres *SearchResult) GetChunkCount() (chunkCount uint64) {
 	return sres.ChunkCount
 }
 
+type TxPublish struct {
+	File     File
+	HopLimit uint32
+}
+
+func (txpub *TxPublish) DecrementHopCount() (shouldSend bool) {
+	txpub.HopLimit--
+	return (txpub.HopLimit > 0)
+}
+
+type BlockPublish struct {
+	Block    Block
+	HopLimit uint32
+}
+
+func (blpub *BlockPublish) DecrementHopCount() (shouldSend bool) {
+	blpub.HopLimit--
+	return (blpub.HopLimit > 0)
+}
+
+type File struct {
+	Name         string
+	Size         int64
+	MetafileHash []byte
+}
+
+type Block struct {
+	PrevHash     [32]byte
+	Nonce        [32]byte
+	Transactions []TxPublish
+}
+
+func (b *Block) Hash() (out [32]byte) {
+	h := sha256.New()
+	h.Write(b.PrevHash[:])
+	h.Write(b.Nonce[:])
+	binary.Write(h, binary.LittleEndian,
+		uint32(len(b.Transactions)))
+	for _, t := range b.Transactions {
+		th := t.Hash()
+		h.Write(th[:])
+	}
+	copy(out[:], h.Sum(nil))
+	return
+}
+
+func (t *TxPublish) Hash() (out [32]byte) {
+	h := sha256.New()
+	binary.Write(h, binary.LittleEndian,
+		uint32(len(t.File.Name)))
+	h.Write([]byte(t.File.Name))
+	h.Write(t.File.MetafileHash)
+	copy(out[:], h.Sum(nil))
+	return
+}
+
 //GossipPacket - protocol structure to be serialized and sent between peers
 type GossipPacket struct {
 	Simple        *SimpleMessage
@@ -158,6 +216,8 @@ type GossipPacket struct {
 	DataReply     *DataReply
 	SearchRequest *SearchRequest
 	SearchReply   *SearchReply
+	TxPublish     *TxPublish
+	BlockPublish  *BlockPublish
 }
 
 //GetUnderlyingType - returns the underlying type of the gossip packet, or the empty string in case of no subtype
@@ -178,6 +238,10 @@ func (g *GossipPacket) GetUnderlyingType() (subtype string) {
 		subtype = "searchrequest"
 	} else if g.SearchReply != nil {
 		subtype = "searchreply"
+	} else if g.TxPublish != nil {
+		subtype = "txpublish"
+	} else if g.BlockPublish != nil {
+		subtype = "blockpublish"
 	} else {
 		subtype = ""
 	}
