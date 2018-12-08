@@ -109,11 +109,18 @@ type SearchReply struct {
 	Results     []*SearchResult
 }
 
+//DecrementHopCount - decrements hop count of SearchReply by 1
+func (srep *SearchReply) DecrementHopCount() (shouldSend bool) {
+	srep.HopLimit--
+	return (srep.HopLimit > 0)
+}
+
 //SearchResult - subtype of Search Request used for replying to file searches from other peers
 type SearchResult struct {
 	FileName     string
 	MetafileHash []byte
 	ChunkMap     []uint64
+	ChunkCount   uint64
 }
 
 //IsFullMatch - Whether the SearchResult has a complete chunkMap or not
@@ -122,18 +129,23 @@ func (sres *SearchResult) IsFullMatch() bool {
 }
 
 //GetFileName - returns the name of the file
-func (sr *SearchResult) GetFileName() (fileName string) {
-	return sr.FileName
+func (sres *SearchResult) GetFileName() (fileName string) {
+	return sres.FileName
 }
 
 //GetMetahash - returns the hash of the file's metafile
-func (sr *SearchResult) GetMetahash() (metahash []byte) {
-	return sr.MetafileHash
+func (sres *SearchResult) GetMetahash() (metahash []byte) {
+	return sres.MetafileHash
 }
 
 //GetChunkMap - returns the chunkMap for that file (list of indexes of owned chunks for that file)
-func (sr *SearchResult) GetChunkMap() (chunkMap []uint64) {
-	return sr.ChunkMap
+func (sres *SearchResult) GetChunkMap() (chunkMap []uint64) {
+	return sres.ChunkMap
+}
+
+//GetChunkCount - returns the chunkCount for that file (number of chunks of that file)
+func (sres *SearchResult) GetChunkCount() (chunkCount uint64) {
+	return sres.ChunkCount
 }
 
 //GossipPacket - protocol structure to be serialized and sent between peers
@@ -423,8 +435,7 @@ func (g *GossipPacket) DecrementHopCount() (shouldSend bool) {
 		err := &GossipPacketError{When: time.Now(), What: "Can't decrement hop count from a SEARCH REQUEST message"}
 		LogError(err)
 	case "searchreply":
-		err := &GossipPacketError{When: time.Now(), What: "Can't decrement hop count from a SEARCH REPLY message"}
-		LogError(err)
+		shouldSend = g.SearchReply.DecrementHopCount()
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
 		LogError(err)
@@ -656,11 +667,30 @@ func (ftd *FileToDownload) GetMetahash() [32]byte {
 	return ftd.Metahash
 }
 
+//FileToSearch - protocol structure sent from client to gossiper.
+//Budget is the budget of the search.
+//Keywords are the keywords to search with
+type FileToSearch struct {
+	Budget   uint64
+	Keywords []string
+}
+
+//GetBudget - returns the budget of the search request
+func (fts *FileToSearch) GetBudget() uint64 {
+	return fts.Budget
+}
+
+//GetKeywords - returns the keywords of the search request
+func (fts *FileToSearch) GetKeywords() []string {
+	return fts.Keywords
+}
+
 //ClientRequest - protocol structure to be serialized and sent from client to gossiper
 type ClientRequest struct {
 	Packet       *GossipPacket
 	FileShare    *FileToShare
 	FileDownload *FileToDownload
+	FileSearch   *FileToSearch
 }
 
 //GetUnderlyingType - returns the underlying type of the client request, or the empty string in case of no subtype
@@ -671,6 +701,8 @@ func (cr *ClientRequest) GetUnderlyingType() (subtype string) {
 		subtype = "fileShare"
 	} else if cr.FileDownload != nil {
 		subtype = "fileDownload"
+	} else if cr.FileSearch != nil {
+		subtype = "fileSearch"
 	} else {
 		subtype = ""
 	}

@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"protobuf"
+	"strings"
 
 	"github.com/mvidigueira/Peerster/dto"
 	"github.com/mvidigueira/Peerster/fileparsing"
@@ -27,10 +28,12 @@ type Client struct {
 	dest            string
 	file            string
 	request         string
+	keywords        string
+	budget          uint64
 }
 
 //NewClient - for the creation of single use clients
-func NewClient(UIport, dest string, file string, msg string, request string) *Client {
+func NewClient(UIport, dest string, file string, msg string, request string, keywords string, budget uint64) *Client {
 	addr, err := net.ResolveUDPAddr("udp4", "localhost:"+clientPort)
 	addrGossiper, err := net.ResolveUDPAddr("udp4", "localhost:"+UIport)
 	logError(err)
@@ -45,12 +48,18 @@ func NewClient(UIport, dest string, file string, msg string, request string) *Cl
 		file:            file,
 		msg:             msg,
 		request:         request,
+		keywords:        keywords,
+		budget:          budget,
 	}
 }
 
 func (c *Client) sendUDP() {
 	var request *dto.ClientRequest
-	if c.request != "" {
+	if c.keywords != "" {
+
+		file2search := &dto.FileToSearch{Budget: c.budget, Keywords: strings.Split(c.keywords, ",")}
+		request = &dto.ClientRequest{FileSearch: file2search}
+	} else if c.request != "" {
 		hash, err := hex.DecodeString(c.request)
 		if err != nil {
 			return

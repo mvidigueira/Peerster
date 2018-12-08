@@ -18,7 +18,11 @@ type SafeFileEntry struct {
 //NewSafeFileEntry - for the creation of SafeFileEntry
 func NewSafeFileEntry(name string, size int, metafile []byte, metahash [32]byte) *SafeFileEntry {
 	chunkNum := len(metafile) / 32
-	return &SafeFileEntry{name: name, size: size, metafile: metafile, metahash: metahash, chunkIndices: make([]uint64, chunkNum), mux: sync.RWMutex{}}
+	chunkIndices := make([]uint64, chunkNum)
+	for i := 1; i <= chunkNum; i++ {
+		chunkIndices[i-1] = uint64(i)
+	}
+	return &SafeFileEntry{name: name, size: size, metafile: metafile, metahash: metahash, chunkIndices: chunkIndices, mux: sync.RWMutex{}}
 }
 
 //SafeGetContents - atomically retrieves contents of SafeFileEntry

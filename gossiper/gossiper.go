@@ -9,6 +9,7 @@ import (
 
 	"github.com/mvidigueira/Peerster/dto"
 	"github.com/mvidigueira/Peerster/fileparsing"
+	"github.com/mvidigueira/Peerster/filesearching"
 	"github.com/mvidigueira/Peerster/routing"
 )
 
@@ -41,6 +42,10 @@ type Gossiper struct {
 	fileMap          *fileparsing.SafeFileMap
 	dlFilesSet       *fileparsing.SafeFileSet
 	dlChunkListeners *fileparsing.DLChanMap
+
+	metahashToChunkOwnersMap *filesearching.MetahashToChunkOwnersMap
+	searchMap                *filesearching.SafeSearchMap
+	filenamesMap             *filesearching.SafeFilenamesMap
 }
 
 //NewGossiper creates a new gossiper
@@ -78,6 +83,10 @@ func NewGossiper(address, name string, UIport string, peers []string, simple boo
 		fileMap:          fileparsing.NewSafeFileMap(),
 		dlFilesSet:       fileparsing.NewSafeFileSet(),
 		dlChunkListeners: fileparsing.NewDLChanMap(),
+
+		metahashToChunkOwnersMap: filesearching.NewMetahashToChunkOwnersMap(),
+		searchMap:                filesearching.NewSafeSearchMap(),
+		filenamesMap:             filesearching.NewSafefileNamesMap(),
 	}
 }
 
@@ -98,7 +107,12 @@ func (g *Gossiper) Start() {
 	cDataReply := make(chan *dto.PacketAddressPair)
 	go g.dataReplyListenRoutine(cDataReply)
 
-	go g.receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, cDataReply)
+	cSearcRequest := make(chan *dto.PacketAddressPair)
+	go g.searchRequestListenRoutine(cSearcRequest)
+	cSearchReply := make(chan *dto.PacketAddressPair)
+	go g.searchReplyListenRoutine(cSearchReply)
+
+	go g.receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, cDataReply, cSearcRequest, cSearchReply)
 	go g.antiEntropy()
 
 	go g.periodicRouteRumor() //DSDV
@@ -107,12 +121,16 @@ func (g *Gossiper) Start() {
 	go g.clientListenRoutine(cUI)
 	cUIPM := make(chan *dto.PacketAddressPair)
 	go g.clientPMListenRoutine(cUIPM)
+
 	cFileShare := make(chan string)
 	go g.clientFileShareListenRoutine(cFileShare)
 	cFileDL := make(chan *dto.FileToDownload)
 	go g.clientFileDownloadListenRoutine(cFileDL)
 
-	g.receiveClientUDP(cUI, cUIPM, cFileShare, cFileDL)
+	cFileSearch := make(chan *dto.FileToSearch)
+	go g.clientFileSearchListenRoutine(cFileSearch)
+
+	g.receiveClientUDP(cUI, cUIPM, cFileShare, cFileDL, cFileSearch)
 }
 
 //addToPeers - adds a peer (ip:port) to the list of known peers
@@ -155,7 +173,7 @@ func (g *Gossiper) sendStatusPacket(peerAddress string) {
 
 //receiveClientUDP - receives gossip packets from CLIENTS and forwards them to the provided channel,
 //setting the origin in the process
-func (g *Gossiper) receiveClientUDP(cRumoring, cPMing chan *dto.PacketAddressPair, cFileShare chan string, cFileDL chan *dto.FileToDownload) {
+func (g *Gossiper) receiveClientUDP(cRumoring, cPMing chan *dto.PacketAddressPair, cFileShare chan string, cFileDL chan *dto.FileToDownload, cFileSearch chan *dto.FileToSearch) {
 	for {
 		request := &dto.ClientRequest{}
 		packetBytes := make([]byte, packetSize)
@@ -193,6 +211,8 @@ func (g *Gossiper) receiveClientUDP(cRumoring, cPMing chan *dto.PacketAddressPai
 			cFileShare <- request.FileShare.GetFileName()
 		case "fileDownload":
 			cFileDL <- request.FileDownload
+		case "fileSearch":
+			cFileSearch <- request.FileSearch
 		default:
 			log.Println("Unrecognized message type. Ignoring...")
 		}
@@ -201,7 +221,7 @@ func (g *Gossiper) receiveClientUDP(cRumoring, cPMing chan *dto.PacketAddressPai
 
 //receiveExternalUDP - receives gossip packets from PEERS and forwards them to the appropriate channel
 //among those provided, depending on whether they are rumor, simple or status packets
-func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, cDataReply chan *dto.PacketAddressPair) {
+func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, cDataReply, cSearcRequest, cSearchReply chan *dto.PacketAddressPair) {
 	for {
 		packet := &dto.GossipPacket{}
 		packetBytes := make([]byte, packetSize)
@@ -244,15 +264,27 @@ func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, c
 			}
 		case "datarequest":
 			if g.UseSimple {
-				log.Println("Running on 'simple' mode. Ignoring private message from " + senderAddress + "...")
+				log.Println("Running on 'simple' mode. Ignoring datarequest message from " + senderAddress + "...")
 			} else {
 				cDataRequest <- pap
 			}
 		case "datareply":
 			if g.UseSimple {
-				log.Println("Running on 'simple' mode. Ignoring private message from " + senderAddress + "...")
+				log.Println("Running on 'simple' mode. Ignoring datareply message from " + senderAddress + "...")
 			} else {
 				cDataReply <- pap
+			}
+		case "searchrequest":
+			if g.UseSimple {
+				log.Println("Running on 'simple' mode. Ignoring searchrequest message from " + senderAddress + "...")
+			} else {
+				cSearcRequest <- pap
+			}
+		case "searchreply":
+			if g.UseSimple {
+				log.Println("Running on 'simple' mode. Ignoring searchreply message from " + senderAddress + "...")
+			} else {
+				cSearchReply <- pap
 			}
 		default:
 			log.Println("Unrecognized message type. Ignoring message from " + senderAddress + "...")

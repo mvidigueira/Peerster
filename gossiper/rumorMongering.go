@@ -10,13 +10,17 @@ import (
 
 const rumorMongerTimeout = 1
 
+func pickRandom(choices []string) string {
+	return choices[rand.Intn(len(choices))]
+}
+
 //pickRandomPeer - picks a random peer from the list of known peers, excluding any in the 'exceptions" list
 func (g *Gossiper) pickRandomPeer(exceptions []string) (string, bool) {
 	possiblePicks := stringArrayDifference(g.peers.GetArrayCopy(), exceptions)
 	if len(possiblePicks) == 0 {
 		return "", false
 	}
-	peer := possiblePicks[rand.Intn(len(possiblePicks))]
+	peer := pickRandom(possiblePicks)
 	return peer, true
 }
 

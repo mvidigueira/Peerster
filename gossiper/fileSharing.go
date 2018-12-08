@@ -83,6 +83,20 @@ func (g *Gossiper) downloadFile(nameToSave string, metahash [32]byte, origin str
 		return false
 	}
 
+	randomOrigins := (origin == "")
+
+	var chunkOwnersMap map[uint64]*dto.SafeStringArray
+	if randomOrigins {
+		cm, hasTotalMatch, _ := g.metahashToChunkOwnersMap.GetMapCopy(metahash) //TODO: add error validation
+		chunkOwnersMap = cm
+		if !hasTotalMatch {
+			fmt.Printf("Error: Attempt to download file with no total matches.\n")
+			return false
+		}
+		fmt.Printf("len(chunkOwnersMap) %v\n", len(chunkOwnersMap))
+		origin = pickRandom(chunkOwnersMap[1].GetArrayCopy())
+	}
+
 	fmt.Printf("DOWNLOADING metafile of %s from %s\n", nameToSave, origin)
 	metafile := g.downloadChunk(metahash, origin)
 	chunkHashes, ok := fileparsing.ParseMetafile(metafile)
@@ -100,6 +114,9 @@ func (g *Gossiper) downloadFile(nameToSave string, metahash [32]byte, origin str
 	chunks := make([][]byte, len(chunkHashes))
 	var actualSize = 0
 	for i, hash := range chunkHashes {
+		if randomOrigins {
+			origin = pickRandom(chunkOwnersMap[uint64(i+1)].GetArrayCopy())
+		}
 		fmt.Printf("DOWNLOADING %s chunk %d from %s\n", nameToSave, i+1, origin)
 		chunks[i] = g.downloadChunk(hash, origin)
 		actualSize += len(chunks[i])

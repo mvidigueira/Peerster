@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 )
 
 const shareBaseDir = "./_SharedFiles/"
@@ -133,4 +134,14 @@ func EstimateFileSize(metafile []byte) (estimatedSize int) {
 		return -1
 	}
 	return len(metafile) / 32 * defaultChunkSize
+}
+
+//ContainsKeyword - returns true if 'name' has a substring matching one of the keywords, false otherwise.
+func ContainsKeyword(name string, keywords []string) bool {
+	for _, keyword := range keywords {
+		if strings.Contains(name, keyword) {
+			return true
+		}
+	}
+	return false
 }
