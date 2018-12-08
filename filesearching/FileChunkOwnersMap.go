@@ -1,7 +1,6 @@
 package filesearching
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/mvidigueira/Peerster/fileparsing"
@@ -85,7 +84,6 @@ func (com *ChunkOwnersMap) GetMapCopy() (chunkOwners map[uint64]*dto.SafeStringA
 	chunkOwners = make(map[uint64]*dto.SafeStringArray)
 	hasTotalMatch = len(com.chunkOwners) == int(com.numChunks)
 	for k, v := range com.chunkOwners {
-		fmt.Printf("k: %v, v: %v\n", k, v)
 		chunkOwners[k] = v
 	}
 	return

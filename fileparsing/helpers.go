@@ -11,6 +11,7 @@ import (
 
 const shareBaseDir = "./_SharedFiles/"
 const dlBaseDir = "./_Downloads/"
+const dlBaseDirHW3 = "./hw3/_Downloads/"
 const defaultChunkSize = 8192 //8KiB or 8KB? Assumed KiB
 
 //ReadChunks - parses the file with the given name at 'shareBaseDir' into 'defaultChunkSize' sized chunks.
@@ -43,8 +44,14 @@ func ReadChunks(fileName string) (chunks [][]byte, size int, err error) {
 
 //WriteFileFromChunks - takes an array of chunks and writes them to file named 'name' at directiory 'dlBaseDir'
 //returns true if it successful, false otherwise
-func WriteFileFromChunks(name string, chunks [][]byte) (ok bool) {
-	f, err := os.Create(dlBaseDir + name)
+func WriteFileFromChunks(name string, chunks [][]byte, hw3 bool) (ok bool) {
+	var dir string
+	if hw3 {
+		dir = dlBaseDirHW3
+	} else {
+		dir = dlBaseDir
+	}
+	f, err := os.Create(dir + name)
 	if err != nil {
 		fmt.Println(err)
 		return false

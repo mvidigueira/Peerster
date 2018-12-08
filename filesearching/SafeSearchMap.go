@@ -1,7 +1,6 @@
 package filesearching
 
 import (
-	"fmt"
 	"strings"
 	"sync"
 
@@ -138,7 +137,6 @@ func (sme *SearchMapEntry) AppendFiles(filenames []string, metahash [32]byte) (s
 	} else {
 		sme.Files[metahash] = dto.NewSafeStringArray([]string{})
 	}
-	fmt.Printf("len(sme.Files): %v\n", len(sme.Files))
 	if len(sme.Files) >= ThresholdTotalMatches {
 		return true
 	}
