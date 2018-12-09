@@ -10,6 +10,9 @@ import (
 	"github.com/mvidigueira/Peerster/dto"
 )
 
+const bitDifficulty = 16
+const hashDisplayBytes = 32
+
 type blockOfChain struct {
 	LengthOfChain int
 	Block         dto.Block
@@ -35,6 +38,25 @@ func (bc *blockOfChain) getForks() map[[32]byte]bool {
 
 func (bc *blockOfChain) removeFork(nextbc *blockOfChain) {
 	delete(bc.Forks, nextbc.Block.Hash())
+}
+
+func checkValid(bc *dto.Block) bool {
+	hash32 := bc.Hash()
+	first := (bitDifficulty - 8) / 8
+	var i int
+	for i = 0; i < first; i++ {
+		if hash32[i] != 0 {
+			return false
+		}
+	}
+	b := byte(0x80)
+	for j := 0; j < ((bitDifficulty - 8) % 8); j++ {
+		if b&hash32[i] != 0 {
+			return false
+		}
+		b = b >> 1
+	}
+	return true
 }
 
 func (bc *blockOfChain) checkValidTransactions(claimedNames *dto.SafeStringArray) (valid bool) {
@@ -63,6 +85,11 @@ func NewBlockchainLedger() *BlockchainLedger {
 
 func (bcl *BlockchainLedger) getGenesis() (genesis *blockOfChain) {
 	return bcl.chains[[32]byte{}]
+}
+
+func (bcl *BlockchainLedger) isPresent(hash [32]byte) (present bool) {
+	_, present = bcl.chains[hash]
+	return
 }
 
 func (bcl *BlockchainLedger) checkValidTransactionsBackwards(bc *blockOfChain) (claimedNames *dto.SafeStringArray, valid bool) {
@@ -138,6 +165,7 @@ func (bcl *BlockchainLedger) recursiveUpdateLength(bc *blockOfChain) (maxLen int
 func (bcl *BlockchainLedger) checkOrphansAndReinsert(newBlock *blockOfChain, claimedNames *dto.SafeStringArray) (maxLen int, highestBlock *blockOfChain) {
 	newBlockHash := newBlock.Block.Hash()
 	genesis := bcl.getGenesis()
+	highestBlock = genesis
 	maxLen = 0
 	for orphanHash := range genesis.Forks {
 		orphanBc := bcl.chains[orphanHash]
@@ -158,7 +186,11 @@ func (bcl *BlockchainLedger) checkOrphansAndReinsert(newBlock *blockOfChain, cla
 }
 
 func (bcl *BlockchainLedger) insertBlock(block *dto.Block) (valid bool, headChanged bool, headGrew bool) {
-	parent, notOrphan := bcl.chains[block.Hash()]
+	if bcl.isPresent(block.Hash()) {
+		fmt.Printf("Repeat block\n")
+		return false, false, false
+	}
+	parent, notOrphan := bcl.chains[block.PrevHash]
 	var bc *blockOfChain
 	var claimedNames *dto.SafeStringArray
 	if notOrphan {
@@ -169,16 +201,20 @@ func (bcl *BlockchainLedger) insertBlock(block *dto.Block) (valid bool, headChan
 			return false, false, false
 		}
 	} else {
+		fmt.Printf("Orphan\n")
 		bc = newBlockOfChain(*block)
 		bc.appendToBlock(bcl.getGenesis())
 		claimedNames, _ = bcl.checkValidTransactionsBackwards(bc)
 	}
 	bcl.chains[block.Hash()] = bc
 	maxLen, highestBlock := bcl.checkOrphansAndReinsert(bc, claimedNames)
+	//fmt.Printf("maxlen: %d, highestBlock: %x\n", maxLen, highestBlock.Block.Hash())
 
 	if bc.LengthOfChain > maxLen {
 		maxLen = bc.LengthOfChain
 		highestBlock = bc
+	} else {
+		fmt.Printf("Reinserted orphans\n")
 	}
 	changed, grew := bcl.headChanges(maxLen, highestBlock)
 	return true, changed, grew
@@ -186,10 +222,9 @@ func (bcl *BlockchainLedger) insertBlock(block *dto.Block) (valid bool, headChan
 
 func (bcl *BlockchainLedger) headChanges(lenOfNewFork int, newForkHead *blockOfChain) (changed bool, grew bool) {
 	headLongestChain := bcl.chains[bcl.longestChain]
+	//blockHash := newForkHead.Block.Hash()
+	//fmt.Printf("Head: %x (len: %d), New: %x (len: %d).\n", bcl.longestChain[(32-hashDisplayBytes):], headLongestChain.LengthOfChain, blockHash[(32-hashDisplayBytes):], lenOfNewFork)
 	if lenOfNewFork > headLongestChain.LengthOfChain {
-		bcl.mux.Lock()
-		bcl.longestChain = newForkHead.Block.Hash()
-		bcl.mux.Unlock()
 		if newForkHead.Block.PrevHash != bcl.longestChain { //fork longer than current chain
 			rewind := bcl.getDegreeOfForkage(headLongestChain, newForkHead)
 			fmt.Printf("FORK-LONGER rewind %d blocks\n", rewind)
@@ -198,26 +233,31 @@ func (bcl *BlockchainLedger) headChanges(lenOfNewFork int, newForkHead *blockOfC
 			changed = false
 			//extending current longest chain
 		}
+		bcl.mux.Lock()
+		bcl.longestChain = newForkHead.Block.Hash()
+		bcl.mux.Unlock()
 		chainArr := bcl.getBlocksInChain(newForkHead)
 		fmt.Printf("CHAIN %s\n", strings.Join(chainArr, ":"))
 		return changed, true
-	} else { //fork shorter than current chain
-		fmt.Printf("FORK-SHORTER [%x]\n", newForkHead.Block.Hash())
-		return false, false
-	}
+	} //fork shorter than current chain
+	common := bcl.getFirstCommon(headLongestChain, newForkHead)
+	fmt.Printf("FORK-SHORTER %x\n", common[(32-hashDisplayBytes):]) //change to Hash()
+	return false, false
 }
 
 func (bcl *BlockchainLedger) getDegreeOfForkage(first, second *blockOfChain) (rewind int) {
-	if first == second {
+	prevFirst, existsFirst := bcl.chains[first.Block.PrevHash]
+	prevSecond, existsSecond := bcl.chains[second.Block.PrevHash]
+	if !(existsFirst && existsSecond) {
+		return 0
+	} else if first.LengthOfChain == 0 || second.LengthOfChain == 0 {
+		return 0
+	} else if first == prevSecond {
 		return 0
 	}
-	prevFirst, existsFirst := bcl.chains[first.Block.PrevHash]
-	prevSecond, existsSecond := bcl.chains[first.Block.PrevHash]
-	if !(existsFirst && existsSecond) {
-		return 1
-	}
 
-	return 1 + bcl.getDegreeOfForkage(prevFirst, prevSecond)
+	rewind = bcl.getDegreeOfForkage(prevFirst, prevSecond)
+	return 1 + rewind
 }
 
 func (bcl *BlockchainLedger) getBlocksInChain(bc *blockOfChain) (block []string) {
@@ -225,16 +265,17 @@ func (bcl *BlockchainLedger) getBlocksInChain(bc *blockOfChain) (block []string)
 	for _, tx := range bc.Block.Transactions {
 		names = append(names, tx.File.Name)
 	}
-	hashS := fmt.Sprintf("%x:%s", bc.Block.Hash(), strings.Join(names, ","))
+	blockHash := bc.Block.Hash()
+	hashS := fmt.Sprintf("%x:%x:%s", blockHash[(32-hashDisplayBytes):], bc.Block.PrevHash[(32-hashDisplayBytes):], strings.Join(names, ","))
 	block = []string{hashS}
 
 	prevHash := bc.Block.PrevHash
 	prevBc, ok := bcl.chains[prevHash]
 	if !ok || prevHash == [32]byte{} {
 		return block
-	} else {
-		return append(block, bcl.getBlocksInChain(prevBc)...)
 	}
+	return append(block, bcl.getBlocksInChain(prevBc)...)
+
 }
 
 func (bcl *BlockchainLedger) getTakenNames(headBc *blockOfChain) (names map[string]bool) {
@@ -264,23 +305,33 @@ func (bcl *BlockchainLedger) getHead() ([32]byte, *blockOfChain) {
 
 func (bcl *BlockchainLedger) mine(block *dto.Block) (bPub *dto.BlockPublish, success bool) {
 	hash32 := block.Hash()
-	for i := 0; i < 5; i++ {
+
+	first := bitDifficulty / 8
+	var i int
+	for i = 0; i < first; i++ {
 		if hash32[i] != 0 {
 			return nil, false
 		}
 	}
+	b := byte(0x80)
+	for j := 0; j < (bitDifficulty % 8); j++ {
+		if b&hash32[i] != 0 {
+			return nil, false
+		}
+		b = b >> 1
+	}
+
 	fmt.Printf("FOUND-BLOCK %x\n", hash32)
 	return &dto.BlockPublish{Block: *block, HopLimit: defaultHopLimit}, true
 }
 
 func getRandomNonce() (r [32]byte) {
-	temp := make([]byte, 32)
-	rand.Read(temp)
-	copy(r[:], temp)
+	rand.Read(r[:])
 	return r
 }
 
 func incrementNonce(nonce [32]byte) (incr [32]byte) {
+	incr = nonce
 	for i := len(nonce) - 1; i >= 0; i-- {
 		incr[i] = nonce[i] + 1
 		if incr[i] != 0 {
@@ -298,6 +349,7 @@ func (g *Gossiper) blockchainMiningRoutine(cFileNaming chan *dto.PacketAddressPa
 	nonce := getRandomNonce()
 	lastTimeMined := time.Now()
 	firstBlock := true
+	canMine := true
 	for {
 		select {
 		case txPubPap := <-cFileNaming: //different for client
@@ -306,42 +358,64 @@ func (g *Gossiper) blockchainMiningRoutine(cFileNaming chan *dto.PacketAddressPa
 			_, present2 := takenNames[txPub.File.Name]
 			if !present1 && !present2 {
 				pendingNames[txPub.File.Name] = txPub
+				lastTimeMined = time.Now()
 			}
 			_, present3 := everyTxEver[txPub.File.Name]
 			if !present3 {
 				everyTxEver[txPub.File.Name] = txPub
 			}
-			g.forwardBlockOrTx(txPubPap.Packet, txPubPap.GetSenderAddress(), 0)
+			g.forwardBlockOrTx(txPubPap.Packet, txPubPap.GetSenderAddress())
+
 		case blockPubPap := <-cBlocks:
 			block := &blockPubPap.Packet.BlockPublish.Block
+			if !checkValid(block) {
+				fmt.Printf("Block with invalid hash received. Ignoring...\n")
+				continue
+			}
+			if g.blockchainLedger.isPresent(block.Hash()) {
+				//fmt.Printf("Repeat block\n")
+				continue
+			}
 			_, headChanged, headGrew := g.blockchainLedger.insertBlock(block)
 			if headChanged {
 				headhash, head = g.blockchainLedger.getHead()
 				takenNames := g.blockchainLedger.getTakenNames(head)
 				pendingNames = mapDifference(everyTxEver, takenNames)
 			} else if headGrew {
+				headhash, _ = g.blockchainLedger.getHead()
 				pendingNames = mapDifference(pendingNames, getNames(block))
 			}
-			g.forwardBlockOrTx(blockPubPap.Packet, blockPubPap.GetSenderAddress(), 0)
+			lastTimeMined = time.Now()
+			g.forwardBlockOrTx(blockPubPap.Packet, blockPubPap.GetSenderAddress())
 		default:
-			blockToMine := createBlock(headhash, nonce, pendingNames)
-			blockPub, valid := g.blockchainLedger.mine(blockToMine)
-			if valid {
-				g.blockchainLedger.insertBlock(blockToMine)
-				pendingNames = make(map[string]*dto.TxPublish)
+			//fmt.Printf("Head: %x, Nonce: %x\n", headhash, nonce)
+			if canMine {
+				blockToMine := createBlock(headhash, nonce, pendingNames)
+				blockPub, valid := g.blockchainLedger.mine(blockToMine)
+				if valid {
+					g.blockchainLedger.insertBlock(blockToMine)
+					headhash, _ = g.blockchainLedger.getHead()
 
-				currentTimeMined := time.Now()
-				delay := currentTimeMined.Sub(lastTimeMined)
-				lastTimeMined = currentTimeMined
+					pendingNames = make(map[string]*dto.TxPublish)
 
-				if firstBlock {
-					delay = time.Second * 5
-					firstBlock = false
+					currentTimeMined := time.Now()
+					delay := currentTimeMined.Sub(lastTimeMined)
+					lastTimeMined = currentTimeMined
+
+					if firstBlock {
+						delay = time.Second * 5
+						firstBlock = false
+					}
+
+					canMine = false
+					go g.forwardOwnBlock(&dto.GossipPacket{BlockPublish: blockPub}, 2*delay, &canMine)
 				}
-
-				go g.forwardBlockOrTx(&dto.GossipPacket{BlockPublish: blockPub}, "", 2*delay)
+				nonce = getRandomNonce() //incrementNonce(nonce)
+			} else {
+				lastTimeMined = time.Now()
+				//fmt.Printf("aiting for publish\n")
 			}
-			nonce = incrementNonce(nonce)
+
 		}
 	}
 }
@@ -354,8 +428,18 @@ func createBlock(prevHash [32]byte, nonce [32]byte, txMap map[string]*dto.TxPubl
 	return &dto.Block{PrevHash: prevHash, Nonce: nonce, Transactions: txs}
 }
 
-func (g *Gossiper) forwardBlockOrTx(packet *dto.GossipPacket, sender string, delay time.Duration) {
+func (g *Gossiper) forwardOwnBlock(packet *dto.GossipPacket, delay time.Duration, canMine *bool) {
 	time.Sleep(delay)
+	shouldSend := packet.DecrementHopCount()
+	if shouldSend {
+		for _, v := range stringArrayDifference(g.peers.GetArrayCopy(), []string{}) {
+			g.sendUDP(packet, v)
+		}
+	}
+	*canMine = true
+}
+
+func (g *Gossiper) forwardBlockOrTx(packet *dto.GossipPacket, sender string) {
 	shouldSend := packet.DecrementHopCount()
 	if shouldSend {
 		for _, v := range stringArrayDifference(g.peers.GetArrayCopy(), []string{sender}) {
@@ -381,4 +465,45 @@ func getNames(b *dto.Block) (names map[string]bool) {
 		names[tx.File.Name] = true
 	}
 	return names
+}
+
+func (bcl *BlockchainLedger) getFirstCommon(first, second *blockOfChain) (common [32]byte) {
+	firstChain := make([][32]byte, 0)
+	secondChain := make([][32]byte, 0)
+	var exists bool
+	firstChain = append(firstChain, first.Block.Hash())
+	for {
+		first, exists = bcl.chains[first.Block.PrevHash]
+		if !exists || first.Block.PrevHash == [32]byte{0} {
+			genesis := [][32]byte{[32]byte{}}
+			firstChain = append(genesis[:], firstChain...)
+			break
+		} else {
+			hash := [][32]byte{first.Block.Hash()}
+			firstChain = append(hash[:], firstChain...)
+		}
+	}
+
+	secondChain = append(secondChain, second.Block.Hash())
+	for {
+		second, exists = bcl.chains[second.Block.PrevHash]
+		if !exists || second.Block.PrevHash == [32]byte{0} {
+			genesis := [][32]byte{[32]byte{}}
+			secondChain = append(genesis[:], secondChain...)
+			break
+		} else {
+			hash := [][32]byte{second.Block.Hash()}
+			secondChain = append(hash[:], secondChain...)
+		}
+	}
+
+	//fmt.Printf("First: %v\nSecond:%v\n", firstChain, secondChain)
+	var commonInd int
+	for i := 0; i < len(firstChain); i++ {
+		if firstChain[i] != secondChain[i] {
+			break
+		}
+		commonInd = i
+	}
+	return firstChain[commonInd]
 }

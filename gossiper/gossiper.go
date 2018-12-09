@@ -6,6 +6,7 @@ import (
 	"net"
 	"protobuf"
 	"strconv"
+	"time"
 
 	"github.com/mvidigueira/Peerster/dto"
 	"github.com/mvidigueira/Peerster/fileparsing"
@@ -98,7 +99,7 @@ func NewGossiper(address, name string, UIport string, peers []string, simple boo
 
 //Start starts the gossiper listening routines
 func (g *Gossiper) Start() {
-	rand.Seed(globalSeed)
+	rand.Seed(time.Now().UnixNano())
 
 	cRumor := make(chan *dto.PacketAddressPair)
 	go g.rumorListenRoutine(cRumor)
