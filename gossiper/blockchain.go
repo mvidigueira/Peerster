@@ -237,7 +237,7 @@ func (bcl *BlockchainLedger) headChanges(lenOfNewFork int, newForkHead *blockOfC
 		bcl.longestChain = newForkHead.Block.Hash()
 		bcl.mux.Unlock()
 		chainArr := bcl.getBlocksInChain(newForkHead)
-		fmt.Printf("CHAIN %s\n", strings.Join(chainArr, ":"))
+		fmt.Printf("CHAIN %s\n", strings.Join(chainArr, " "))
 		return changed, true
 	} //fork shorter than current chain
 	common := bcl.getFirstCommon(headLongestChain, newForkHead)
