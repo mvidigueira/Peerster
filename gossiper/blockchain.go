@@ -42,7 +42,7 @@ func (bc *blockOfChain) removeFork(nextbc *blockOfChain) {
 
 func checkValid(bc *dto.Block) bool {
 	hash32 := bc.Hash()
-	first := (bitDifficulty - 8) / 8
+	first := (bitDifficulty) / 8
 	var i int
 	for i = 0; i < first; i++ {
 		if hash32[i] != 0 {
@@ -50,7 +50,7 @@ func checkValid(bc *dto.Block) bool {
 		}
 	}
 	b := byte(0x80)
-	for j := 0; j < ((bitDifficulty - 8) % 8); j++ {
+	for j := 0; j < ((bitDifficulty) % 8); j++ {
 		if b&hash32[i] != 0 {
 			return false
 		}
