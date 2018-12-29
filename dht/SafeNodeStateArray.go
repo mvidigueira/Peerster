@@ -4,7 +4,7 @@ import "sync"
 
 //SafeNodeStateArray - safe array for node states
 type SafeNodeStateArray struct {
-	target    [IDByteSize]byte
+	Target    [IDByteSize]byte
 	exists    map[[IDByteSize]byte]bool
 	Queried   map[[IDByteSize]byte]bool
 	Responded map[[IDByteSize]byte]bool
@@ -17,7 +17,8 @@ func NewSafeNodeStateArray(target [IDByteSize]byte) *SafeNodeStateArray {
 	array := make([]*NodeState, 0)
 	queried := make(map[[IDByteSize]byte]bool)
 	responded := make(map[[IDByteSize]byte]bool)
-	return &SafeNodeStateArray{target: target, Queried: queried, Responded: responded, array: &array, mux: sync.Mutex{}}
+	exists := make(map[[IDByteSize]byte]bool)
+	return &SafeNodeStateArray{Target: target, Queried: queried, exists: exists, Responded: responded, array: &array, mux: sync.Mutex{}}
 }
 
 //Insert - inserts in the array, leaving it ordered
@@ -29,7 +30,7 @@ func (snsa *SafeNodeStateArray) Insert(potential *NodeState) (closest bool) {
 	}
 	snsa.exists[potential.NodeID] = true
 
-	*snsa.array = InsertOrdered(snsa.target, *snsa.array, potential)
+	*snsa.array = InsertOrdered(snsa.Target, *snsa.array, potential)
 	if (*snsa.array)[0] == potential {
 		closest = true
 	}
@@ -97,6 +98,24 @@ func (snsa *SafeNodeStateArray) GetKClosestUnqueried(k int) (unqueried, responde
 			k--
 		}
 		if k == 0 {
+			return
+		}
+	}
+	return
+}
+
+//GetKClosestResponded - returns the k closest nodes that are responsive, if there are
+func (snsa *SafeNodeStateArray) GetKClosestResponded(k int) (responded []*NodeState, ok bool) {
+	responded = make([]*NodeState, 0)
+	snsa.mux.Lock()
+	defer snsa.mux.Unlock()
+	for _, node := range *snsa.array {
+		if snsa.hasResponded(node) {
+			responded = append(responded, node)
+			k--
+		}
+		if k == 0 {
+			ok = true
 			return
 		}
 	}

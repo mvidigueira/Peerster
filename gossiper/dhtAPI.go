@@ -19,8 +19,7 @@ func (g *Gossiper) LookupNodes(id [dht.IDByteSize]byte) (closest []*dht.NodeStat
 	return g.lookupNodesAux(id, snsa)
 }
 
-// lookupNodesAux implementation is evil incarnate, and it is in its "simple" form
-// I might change this to be much simpler, without replication (only returns the closest node)
+// lookupNodesAux - simple version that assumes that nodes don't crash
 func (g *Gossiper) lookupNodesAux(id [dht.IDByteSize]byte, snsa *dht.SafeNodeStateArray) (closest []*dht.NodeState) {
 	results := snsa.GetAlphaUnqueried(1)
 	node := results[0]
@@ -35,10 +34,47 @@ func (g *Gossiper) lookupNodesAux(id [dht.IDByteSize]byte, snsa *dht.SafeNodeSta
 	}
 
 	if closer {
-		return g.lookupNodesAux(id, snsa)
+		return g.lookupNodesAux2(id, snsa)
 	}
 
-	//BEWARE - UGLIEST PIECE OF CODE I HAVE EVER WRITTEN:
+	closest = snsa.GetArrayCopy()
+	return closest[:1]
+}
+
+// FUNCTION GRAVEYARD - BE WARNED
+
+// LookupNodes2 looks for the closest nodes to a specific id (up to k nodes).
+// This id can represent a nodeID or a key hash.
+// Unlike LookupValue, it does not stop early if it encounters a node with the key stored.
+func (g *Gossiper) LookupNodes2(id [dht.IDByteSize]byte) (closest []*dht.NodeState) {
+	snsa := dht.NewSafeNodeStateArray(id)
+	results := g.bucketTable.alphaClosest(id, 1)
+	node := results[0]
+	snsa.Insert(node)
+
+	return g.lookupNodesAux2(id, snsa)
+}
+
+// lookupNodesAux2 implementation is evil incarnate, and it's in its "simple" form
+// I might change this to be much simpler, without replication (only returns the closest node)
+func (g *Gossiper) lookupNodesAux2(id [dht.IDByteSize]byte, snsa *dht.SafeNodeStateArray) (closest []*dht.NodeState) {
+	results := snsa.GetAlphaUnqueried(1)
+	node := results[0]
+
+	c := g.sendLookupNode(node, id)
+	snsa.SetQueried(node)
+
+	msg := <-c
+	closer := false
+	for _, node := range msg.NodeReply.NodeStates {
+		closer = closer || snsa.Insert(node)
+	}
+
+	if closer {
+		return g.lookupNodesAux2(id, snsa)
+	}
+
+	//BEWARE - UGLIEST PIECE OF CODE I HAVE EVER WRITTEN
 
 	t := time.NewTicker(1 * time.Second)
 	cases := make([]reflect.SelectCase, 1)
@@ -63,12 +99,10 @@ func (g *Gossiper) lookupNodesAux(id [dht.IDByteSize]byte, snsa *dht.SafeNodeSta
 				unqueried, closest = snsa.GetKClosestUnqueried(bucketSize)
 				break
 			} else {
-				snsa.SetResponded(unqueried[chosen-1])
-				unqueried, closest = snsa.GetKClosestUnqueried(bucketSize)
-				if len(unqueried) == 0 {
-					break
+				snsa.SetResponded(queried[chosen-1])
+				if resp, ok := snsa.GetKClosestResponded(bucketSize); ok {
+					return resp
 				}
-				continue
 			}
 		}
 	}

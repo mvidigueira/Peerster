@@ -2,14 +2,16 @@ package dht
 
 const IDByteSize = 160 / 8
 
+type typeID [IDByteSize]byte
+
 type NodeState struct {
-	NodeID  [IDByteSize]byte
+	NodeID  typeID
 	Address string // IP address with the form "host:port"
 }
 
 type Message struct {
 	Nonce       uint64
-	SenderID    [IDByteSize]byte
+	SenderID    typeID
 	Store       *Store
 	Ping        *Ping
 	PingReply   *PingReply
@@ -20,7 +22,7 @@ type Message struct {
 }
 
 type Store struct {
-	Key  [IDByteSize]byte
+	Key  typeID
 	Data []byte
 }
 
@@ -29,7 +31,7 @@ type Ping struct{}
 type PingReply struct{}
 
 type NodeLookup struct {
-	NodeID [IDByteSize]byte
+	NodeID typeID
 }
 
 type NodeReply struct {
@@ -37,7 +39,7 @@ type NodeReply struct {
 }
 
 type ValueLookup struct {
-	Key [IDByteSize]byte
+	Key typeID
 }
 
 type ValueReply struct {
