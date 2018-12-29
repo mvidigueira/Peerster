@@ -5,7 +5,11 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log"
+	"net"
+	"protobuf"
 	"time"
+
+	"github.com/mvidigueira/Peerster/dht"
 )
 
 //SimpleMessage - subtype of GossipPacket to be used between peers when running in 'simple' mode
@@ -217,6 +221,7 @@ type GossipPacket struct {
 	SearchReply   *SearchReply
 	TxPublish     *TxPublish
 	BlockPublish  *BlockPublish
+	DHTMessage    *dht.Message
 }
 
 //GetUnderlyingType - returns the underlying type of the gossip packet, or the empty string in case of no subtype
@@ -241,6 +246,8 @@ func (g *GossipPacket) GetUnderlyingType() (subtype string) {
 		subtype = "txpublish"
 	} else if g.BlockPublish != nil {
 		subtype = "blockpublish"
+	} else if g.DHTMessage != nil {
+		subtype = "dhtmessage"
 	} else {
 		subtype = ""
 	}
@@ -283,6 +290,9 @@ func (g *GossipPacket) GetOrigin() (origin string) {
 	case "blockpublish":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract origin name from a BLOCKPUBLISH message"}
 		LogError(err)
+	case "dhtmessage":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract origin name from a MESSAGE message"}
+		LogError(err)
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
 		LogError(err)
@@ -321,6 +331,9 @@ func (g *GossipPacket) GetSeqID() (id uint32) {
 	case "blockpublish":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract ID from a BLOCKPUBLISH message"}
 		LogError(err)
+	case "dhtmessage":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract ID from a MESSAGE message"}
+		LogError(err)
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
 		LogError(err)
@@ -358,6 +371,9 @@ func (g *GossipPacket) GetContents() (contents string) {
 	case "blockpublish":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract contents from a BLOCKPUBLISH message"}
 		LogError(err)
+	case "dhtmessage":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract contents from a MESSAGE message"}
+		LogError(err)
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
 		LogError(err)
@@ -392,6 +408,9 @@ func (g *GossipPacket) GetHopLimit() (limit uint32) {
 		limit = g.TxPublish.HopLimit
 	case "blockpublish":
 		limit = g.BlockPublish.HopLimit
+	case "dhtmessage":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract hop-limit from a MESSAGE message"}
+		LogError(err)
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
 		LogError(err)
@@ -427,6 +446,9 @@ func (g *GossipPacket) GetDestination() (dest string) {
 		LogError(err)
 	case "blockpublish":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract destination from a BLOCKPUBLISH message"}
+		LogError(err)
+	case "dhtmessage":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract destination from a MESSAGE message"}
 		LogError(err)
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
@@ -465,6 +487,9 @@ func (g *GossipPacket) GetHashValue() (hash []byte) {
 		LogError(err)
 	case "blockpublish":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract hash value from a BLOCKPUBLISH message"}
+		LogError(err)
+	case "dhtmessage":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract hash value from a MESSAGE message"}
 		LogError(err)
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
@@ -505,6 +530,9 @@ func (g *GossipPacket) GetData() (data []byte) {
 	case "blockpublish":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract data from a BLOCKPUBLISH message"}
 		LogError(err)
+	case "dhtmessage":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract data from a MESSAGE message"}
+		LogError(err)
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
 		LogError(err)
@@ -539,6 +567,9 @@ func (g *GossipPacket) DecrementHopCount() (shouldSend bool) {
 		shouldSend = g.TxPublish.DecrementHopCount()
 	case "blockpublish":
 		shouldSend = g.BlockPublish.DecrementHopCount()
+	case "dhtmessage":
+		err := &GossipPacketError{When: time.Now(), What: "Can't decrement hop count from a MESSAGE message"}
+		LogError(err)
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
 		LogError(err)
@@ -577,6 +608,9 @@ func (g *GossipPacket) GetBudget() (budget uint64) {
 		LogError(err)
 	case "blockpublish":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract budget from a BLOCKPUBLISH message"}
+		LogError(err)
+	case "dhtmessage":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract budget from a MESSAGE message"}
 		LogError(err)
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
@@ -617,6 +651,9 @@ func (g *GossipPacket) GetKeywords() (keywords []string) {
 	case "blockpublish":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract keywords from a BLOCKPUBLISH message"}
 		LogError(err)
+	case "dhtmessage":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract keywords from a MESSAGE message"}
+		LogError(err)
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
 		LogError(err)
@@ -655,6 +692,9 @@ func (g *GossipPacket) GetSearchResults() (results []*SearchResult) {
 		LogError(err)
 	case "blockpublish":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract search results from a BLOCKPUBLISH message"}
+		LogError(err)
+	case "dhtmessage":
+		err := &GossipPacketError{When: time.Now(), What: "Can't extract search results from a MESSAGE message"}
 		LogError(err)
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
@@ -828,4 +868,13 @@ func (cr *ClientRequest) GetUnderlyingType() (subtype string) {
 		subtype = ""
 	}
 	return
+}
+
+//SendGossipPacket - sends the gossip packet 'packet' to a peer at address 'addr' using the udp connection 'conn'
+func SendGossipPacket(packet *GossipPacket, addr string, conn *net.UDPConn) {
+	udpAddr, err := net.ResolveUDPAddr("udp4", addr)
+	LogError(err)
+	packetBytes, err := protobuf.Encode(packet)
+	LogError(err)
+	conn.WriteToUDP(packetBytes, udpAddr)
 }

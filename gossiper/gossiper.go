@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/mvidigueira/Peerster/dht"
 	"github.com/mvidigueira/Peerster/dto"
 	"github.com/mvidigueira/Peerster/fileparsing"
 	"github.com/mvidigueira/Peerster/filesearching"
@@ -50,6 +51,10 @@ type Gossiper struct {
 	matchesGUImap            *dto.SafeHashFilenamePairArray
 
 	blockchainLedger *BlockchainLedger
+
+	dhtMyID     [dht.IDByteSize]byte
+	dhtChanMap  *dht.ChanMap
+	bucketTable *bucketTable
 }
 
 //NewGossiper creates a new gossiper
@@ -63,7 +68,7 @@ func NewGossiper(address, name string, UIport string, peers []string, simple boo
 	udpConnClient, err := net.ListenUDP("udp4", clientAddr)
 	dto.LogError(err)
 
-	return &Gossiper{
+	g := &Gossiper{
 		address:   address,
 		name:      name,
 		UseSimple: simple,
@@ -94,7 +99,12 @@ func NewGossiper(address, name string, UIport string, peers []string, simple boo
 		matchesGUImap:            dto.NewSafeHashFilenamePairArray(),
 
 		blockchainLedger: NewBlockchainLedger(),
+
+		dhtMyID:    dht.InitialRandNodeID(),
+		dhtChanMap: dht.NewChanMap(),
 	}
+	g.bucketTable = newBucketTable(g.dhtMyID, g)
+	return g
 }
 
 //Start starts the gossiper listening routines
@@ -160,11 +170,7 @@ func (g *Gossiper) addMessage(rm *dto.RumorMessage) bool {
 
 //sendUDP - sends a gossip packet to peer at 'addr' via UDP, using te gossiper's external connection
 func (g *Gossiper) sendUDP(packet *dto.GossipPacket, addr string) {
-	udpAddr, err := net.ResolveUDPAddr("udp4", addr)
-	dto.LogError(err)
-	packetBytes, err := protobuf.Encode(packet)
-	dto.LogError(err)
-	g.conn.WriteToUDP(packetBytes, udpAddr)
+	dto.SendGossipPacket(packet, addr, g.conn)
 }
 
 //sendAllPeers - sends a gossip packet to all peers except 'exception'
