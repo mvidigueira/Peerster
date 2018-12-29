@@ -1,6 +1,7 @@
 package gossiper
 
 import (
+	"crypto/sha1"
 	"fmt"
 	"log"
 	"math/rand"
@@ -14,6 +15,7 @@ import (
 	"github.com/mvidigueira/Peerster/fileparsing"
 	"github.com/mvidigueira/Peerster/filesearching"
 	"github.com/mvidigueira/Peerster/routing"
+	"github.com/mvidigueira/Peerster/webcrawler"
 )
 
 var packetSize = 10000
@@ -58,10 +60,11 @@ type Gossiper struct {
 	bucketTable  *bucketTable
 	storage      *dht.StorageMap
 	dhtBootstrap string
+	webCrawler   *webcrawler.Crawler
 }
 
 //NewGossiper creates a new gossiper
-func NewGossiper(address, name string, UIport string, peers []string, simple bool, rtimeout int, dhtBootstrap string) *Gossiper {
+func NewGossiper(address, name string, UIport string, peers []string, simple bool, rtimeout int, dhtBootstrap string, crawlLeader bool) *Gossiper {
 	gossipAddr, err := net.ResolveUDPAddr("udp4", address)
 	dto.LogError(err)
 	clientAddr, err := net.ResolveUDPAddr("udp4", "localhost:"+UIport)
@@ -107,8 +110,12 @@ func NewGossiper(address, name string, UIport string, peers []string, simple boo
 		dhtChanMap:   dht.NewChanMap(),
 		storage:      dht.NewStorageMap(),
 		dhtBootstrap: dhtBootstrap,
+
+		webCrawler: webcrawler.New(crawlLeader),
 	}
+
 	g.bucketTable = newBucketTable(g.dhtMyID, g)
+
 	return g
 }
 
@@ -165,6 +172,9 @@ func (g *Gossiper) Start() {
 	if g.dhtBootstrap != "" {
 		g.dhtJoin(g.dhtBootstrap)
 	}
+
+	g.webCrawler.Start()
+	go g.webCrawlerListenerRoutine()
 
 	g.receiveClientUDP(cUI, cUIPM, cFileShare, cFileDL, cFileSearch, cCliDHT)
 }
@@ -356,6 +366,10 @@ func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, c
 			} else {
 				cDHT <- pap
 			}
+		case "hyperlinkmessage":
+			g.webCrawler.InChan <- &webcrawler.CrawlerPacket{
+				HyperlinkPackage: packet.HyperlinkMessage,
+			}
 		default:
 			log.Println("Unrecognized message type. Ignoring message from " + senderAddress + "...")
 		}
@@ -441,6 +455,55 @@ func (g *Gossiper) rumorListenRoutine(cRumor chan *dto.PacketAddressPair) {
 			}
 		} else {
 			g.sendAllPeers(packet, pap.GetSenderAddress())
+		}
+	}
+}
+
+//webCrawlerListenRouting - deals with indexing of webpages and hyperlink distribution
+func (g *Gossiper) webCrawlerListenerRoutine() {
+	for {
+		select {
+		case packet := <-g.webCrawler.OutChan:
+			switch {
+			case packet.HyperlinkPackage != nil:
+				links := packet.HyperlinkPackage.Links
+
+				domains := map[string][]string{}
+				for _, hyperlink := range links {
+					hash := sha1.Sum([]byte(hyperlink))
+					closestNodes := g.LookupNodes(hash)
+					if len(closestNodes) == 0 {
+						log.Fatal("LookupNodes returned an empty list.")
+					}
+					responsibleNode := closestNodes[0].Address
+					hyperlinks, found := domains[responsibleNode]
+					if !found {
+						domains[responsibleNode] = []string{hyperlink}
+					} else {
+						hyperlinks = append(hyperlinks, hyperlink)
+						domains[responsibleNode] = hyperlinks
+					}
+				}
+
+				for owner, hyperlinks := range domains {
+					if owner == g.address {
+						// Send back the urls belonging to this nodes domain
+						g.webCrawler.InChan <- &webcrawler.CrawlerPacket{
+							HyperlinkPackage: &webcrawler.HyperlinkPackage{
+								Links: hyperlinks,
+							},
+						}
+					} else {
+						g.sendUDP(&dto.GossipPacket{
+							HyperlinkMessage: &webcrawler.HyperlinkPackage{
+								Links: hyperlinks,
+							},
+						}, owner)
+					}
+				}
+			case packet.IndexPackage != nil:
+
+			}
 		}
 	}
 }
