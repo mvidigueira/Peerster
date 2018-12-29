@@ -2,7 +2,10 @@ package webcrawler
 
 import (
 	"crypto/sha1"
+	"encoding/binary"
 	"fmt"
+	"hash"
+	"hash/fnv"
 	"log"
 	"net/http"
 	"net/url"
@@ -13,6 +16,7 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/bbalet/stopwords"
+	"github.com/mvidigueira/Peerster/bloomfilter"
 )
 
 /*func main() {
@@ -40,24 +44,28 @@ import (
 }*/
 
 type Crawler struct {
-	crawlQueue []string
-	mux        *sync.Mutex
-	domain     string
-	InChan     chan *CrawlerPacket
-	OutChan    chan *CrawlerPacket
-	leader     bool
+	crawlQueue  []string
+	mux         *sync.Mutex
+	domain      string
+	InChan      chan *CrawlerPacket
+	OutChan     chan *CrawlerPacket
+	leader      bool
+	bloomFilter *bloomfilter.BloomFilter
+	hasher      hash.Hash64
 }
 
 // PUBLIC API
 
 func New(leader bool) *Crawler {
 	return &Crawler{
-		crawlQueue: []string{},
-		mux:        &sync.Mutex{},
-		domain:     "http://en.wikipedia.org",
-		InChan:     make(chan *CrawlerPacket),
-		OutChan:    make(chan *CrawlerPacket),
-		leader:     leader,
+		crawlQueue:  []string{},
+		mux:         &sync.Mutex{},
+		domain:      "http://en.wikipedia.org",
+		InChan:      make(chan *CrawlerPacket),
+		OutChan:     make(chan *CrawlerPacket),
+		leader:      leader,
+		bloomFilter: bloomfilter.New(2, 10e6),
+		hasher:      fnv.New64(),
 	}
 }
 
@@ -72,7 +80,6 @@ func (wc *Crawler) Start() {
 				Links: []string{"/wiki/Sweden"},
 			},
 		}
-
 	}
 }
 
@@ -95,6 +102,9 @@ func (wc *Crawler) crawl() {
 				page := wc.crawlUrl(nextPage)
 
 				fmt.Printf("Crawled %s, found %d hyperlinks and %d keywords.\n", nextPage, len(page.Hyperlinks), len(page.Words))
+
+				wc.bloomFilter.Set(page.Hash)
+				wc.bloomFilter.Set([]byte(nextPage))
 
 				//urlsBelongingToMyDomain, urlsBelongingToOtherDomains := wc.divideURLsAfterDomain(page.Hyperlinks)
 				// Update local crawl queue
@@ -149,7 +159,7 @@ func (wc *Crawler) crawlUrl(urlString string) *PageInfo {
 
 	words := wc.extractWords(doc)
 
-	return &PageInfo{Hyperlinks: wc.removeDuplicates(urls), Words: wc.removeDuplicates(words)}
+	return &PageInfo{Hyperlinks: wc.removeDuplicates(urls), Words: wc.removeDuplicates(words), Hash: wc.fastHash(rawDoc.Text())}
 }
 
 // Extracts words from a wikipedia document
@@ -262,9 +272,9 @@ func (wc *Crawler) getPage(url string) *goquery.Document {
 }
 
 // Returns true if the url belongs to this nodes crawl domain
-func (wc *Crawler) isMyDomain(url string) bool {
+/*func (wc *Crawler) isMyDomain(url string) bool {
 	return true
-}
+}*/
 
 // Removes duplicates from the list given as input
 func (wc *Crawler) removeDuplicates(strs []string) []string {
@@ -284,6 +294,15 @@ func (wc *Crawler) hash(id string) [20]byte {
 	return sha1.Sum([]byte(id))
 }
 
+func (wc *Crawler) fastHash(id string) []byte {
+	wc.hasher.Reset()
+	wc.hasher.Write([]byte(id))
+	hash := wc.hasher.Sum64()
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, hash)
+	return b
+}
+
 // Removes first element from crawler queue
 func (wc *Crawler) popQueue() string {
 	wc.mux.Lock()
@@ -297,10 +316,15 @@ func (wc *Crawler) popQueue() string {
 func (wc *Crawler) updateQueue(hyperlinks []string) {
 	wc.mux.Lock()
 	defer wc.mux.Unlock()
-	wc.crawlQueue = append(wc.crawlQueue, hyperlinks...)
+	for _, hyperlink := range hyperlinks {
+		if wc.bloomFilter.IsSet([]byte(hyperlink)) {
+			continue
+		}
+		wc.crawlQueue = append(wc.crawlQueue, hyperlink)
+	}
 }
 
-func (wc *Crawler) DivideURLsAfterDomain(urls []string) ([]string, []string) {
+/*func (wc *Crawler) DivideURLsAfterDomain(urls []string) ([]string, []string) {
 	myDomain := []string{}
 	otherDomains := []string{}
 	for _, url := range urls {
@@ -311,4 +335,4 @@ func (wc *Crawler) DivideURLsAfterDomain(urls []string) ([]string, []string) {
 		}
 	}
 	return myDomain, otherDomains
-}
+}*/
