@@ -34,13 +34,11 @@ func isCloser(target, id1, id2 [IDByteSize]byte) (id2Closer bool) {
 }
 
 // prevClosest must be ordered from closest to furthest away
-func KeepClosest(target [IDByteSize]byte, prevClosest []*NodeState, potential *NodeState) (closest []*NodeState) {
-	size := len(prevClosest)
+func InsertOrdered(target [IDByteSize]byte, prevClosest []*NodeState, potential *NodeState) (closest []*NodeState) {
 	for i, prev := range prevClosest {
 		if isCloser(target, prev.NodeID, potential.NodeID) {
 			temp := append([]*NodeState{potential}, prevClosest[i:]...)
 			closest = append(prevClosest[:i], temp...)
-			closest = closest[:size]
 			return
 		}
 	}

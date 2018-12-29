@@ -24,7 +24,7 @@ func (b *bucket) updateNode(ns *dht.NodeState) {
 
 	if len(b.Nodes) >= bucketSize {
 		lastNode := b.Nodes[bucketSize-1]
-		if ok := b.Gossiper.Ping(lastNode); ok {
+		if ok := b.Gossiper.sendPing(lastNode); ok {
 			b.Nodes = append([]*dht.NodeState{lastNode}, b.Nodes[:bucketSize-1]...)
 			return
 		}
@@ -61,7 +61,8 @@ func (bt *bucketTable) alphaClosest(target [dht.IDByteSize]byte, alpha int) (res
 			if len(results) < alpha {
 				results = append(results, node)
 			} else {
-				results = dht.KeepClosest(target, results, node)
+				results = dht.InsertOrdered(target, results, node)
+				results = results[:bucketSize]
 			}
 		}
 	}

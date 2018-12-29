@@ -55,6 +55,7 @@ type Gossiper struct {
 	dhtMyID     [dht.IDByteSize]byte
 	dhtChanMap  *dht.ChanMap
 	bucketTable *bucketTable
+	storage     *dht.StorageMap
 }
 
 //NewGossiper creates a new gossiper
@@ -102,6 +103,7 @@ func NewGossiper(address, name string, UIport string, peers []string, simple boo
 
 		dhtMyID:    dht.InitialRandNodeID(),
 		dhtChanMap: dht.NewChanMap(),
+		storage:    dht.NewStorageMap(),
 	}
 	g.bucketTable = newBucketTable(g.dhtMyID, g)
 	return g
