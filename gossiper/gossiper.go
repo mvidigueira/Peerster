@@ -502,7 +502,7 @@ func (g *Gossiper) webCrawlerListenerRoutine() {
 					}
 				}
 			case packet.IndexPackage != nil:
-
+				// Do something with the (keywords, url) pairs
 			}
 		}
 	}
