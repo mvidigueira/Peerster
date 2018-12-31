@@ -26,6 +26,7 @@ func main() {
 	peersStr := flag.String("peers", "", "comma separated list of peers of the form ip:port")
 	rtimeout := flag.Int("rtimer", 0, "route rumors sending period in seconds, 0 to disable sending of rout rumors (default 0)")
 	simple := flag.Bool("simple", false, "run gossiper in simple broadcast mode")
+	bootstrap := flag.String("boot", "", "peer of the form ip:port that is used to join the dht network")
 
 	flag.Parse()
 
@@ -34,7 +35,7 @@ func main() {
 	if *peersStr != "" {
 		peers = strings.Split(*peersStr, ",")
 	}
-	g = gossiper.NewGossiper(*gossipAddr, *name, *UIPort, peers, *simple, *rtimeout)
+	g = gossiper.NewGossiper(*gossipAddr, *name, *UIPort, peers, *simple, *rtimeout, *bootstrap)
 
 	go g.Start()
 

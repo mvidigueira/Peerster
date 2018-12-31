@@ -2,10 +2,13 @@ package main
 
 import (
 	"encoding/hex"
+	"fmt"
 	"log"
 	"net"
 	"protobuf"
 	"strings"
+
+	"github.com/mvidigueira/Peerster/dht"
 
 	"github.com/mvidigueira/Peerster/dto"
 	"github.com/mvidigueira/Peerster/fileparsing"
@@ -30,10 +33,12 @@ type Client struct {
 	request         string
 	keywords        string
 	budget          uint64
+	lookupKey       string
+	lookupNode      string
 }
 
 //NewClient - for the creation of single use clients
-func NewClient(UIport, dest string, file string, msg string, request string, keywords string, budget uint64) *Client {
+func NewClient(UIport, dest string, file string, msg string, request string, keywords string, budget uint64, lookupNode, lookupKey string) *Client {
 	addr, err := net.ResolveUDPAddr("udp4", "localhost:"+clientPort)
 	addrGossiper, err := net.ResolveUDPAddr("udp4", "localhost:"+UIport)
 	logError(err)
@@ -50,13 +55,41 @@ func NewClient(UIport, dest string, file string, msg string, request string, key
 		request:         request,
 		keywords:        keywords,
 		budget:          budget,
+		lookupNode:      lookupNode,
+		lookupKey:       lookupKey,
 	}
+
 }
 
 func (c *Client) sendUDP() {
 	var request *dto.ClientRequest
-	if c.keywords != "" {
-
+	if c.lookupNode != "" {
+		idB, err := hex.DecodeString(c.lookupNode)
+		if err != nil {
+			fmt.Print(err)
+			return
+		}
+		id, ok := dht.ConvertToTypeID(idB)
+		if !ok {
+			fmt.Print(err)
+			return
+		}
+		lookup := &dto.DHTLookup{Node: &id}
+		request = &dto.ClientRequest{DHTLookup: lookup}
+	} else if c.lookupKey != "" {
+		idB, err := hex.DecodeString(c.lookupKey)
+		if err != nil {
+			fmt.Print(err)
+			return
+		}
+		id, ok := dht.ConvertToTypeID(idB)
+		if !ok {
+			fmt.Print(err)
+			return
+		}
+		lookup := &dto.DHTLookup{Key: &id}
+		request = &dto.ClientRequest{DHTLookup: lookup}
+	} else if c.keywords != "" {
 		file2search := &dto.FileToSearch{Budget: c.budget, Keywords: strings.Split(c.keywords, ",")}
 		request = &dto.ClientRequest{FileSearch: file2search}
 	} else if c.request != "" {

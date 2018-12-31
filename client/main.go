@@ -12,9 +12,11 @@ func main() {
 	request := flag.String("request", "", "request a chunk or metafile of this hash")
 	keywords := flag.String("keywords", "", "keywords to be used for a search")
 	budget := flag.Int64("budget", 0, "budget to be used for a search")
+	node := flag.String("lookupNode", "", "request a dht node lookup")
+	key := flag.String("lookupKey", "", "request a dht key lookup")
 
 	flag.Parse()
 
-	client := NewClient(*UIPort, *dest, *fileName, *msg, *request, *keywords, uint64(*budget))
+	client := NewClient(*UIPort, *dest, *fileName, *msg, *request, *keywords, uint64(*budget), *node, *key)
 	client.sendUDP()
 }

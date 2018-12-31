@@ -1,23 +1,25 @@
 package dht
 
-import "sync"
+import (
+	"sync"
+)
 
 //SafeNodeStateArray - safe array for node states
 type SafeNodeStateArray struct {
-	Target    [IDByteSize]byte
-	exists    map[[IDByteSize]byte]bool
-	Queried   map[[IDByteSize]byte]bool
-	Responded map[[IDByteSize]byte]bool
+	Target    TypeID
+	exists    map[TypeID]bool
+	Queried   map[TypeID]bool
+	Responded map[TypeID]bool
 	array     *[]*NodeState
 	mux       sync.Mutex
 }
 
 //NewSafeNodeStateArray - for the creation of an empty SafeNodeStateArray
-func NewSafeNodeStateArray(target [IDByteSize]byte) *SafeNodeStateArray {
+func NewSafeNodeStateArray(target TypeID) *SafeNodeStateArray {
 	array := make([]*NodeState, 0)
-	queried := make(map[[IDByteSize]byte]bool)
-	responded := make(map[[IDByteSize]byte]bool)
-	exists := make(map[[IDByteSize]byte]bool)
+	queried := make(map[TypeID]bool)
+	responded := make(map[TypeID]bool)
+	exists := make(map[TypeID]bool)
 	return &SafeNodeStateArray{Target: target, Queried: queried, exists: exists, Responded: responded, array: &array, mux: sync.Mutex{}}
 }
 
@@ -33,6 +35,16 @@ func (snsa *SafeNodeStateArray) Insert(potential *NodeState) (closest bool) {
 	*snsa.array = InsertOrdered(snsa.Target, *snsa.array, potential)
 	if (*snsa.array)[0] == potential {
 		closest = true
+	}
+	return
+}
+
+func (snsa *SafeNodeStateArray) InsertArray(nodes []*NodeState, except TypeID) (closer bool) {
+	closer = false
+	for _, node := range nodes {
+		if node.NodeID != except {
+			closer = closer || snsa.Insert(node)
+		}
 	}
 	return
 }

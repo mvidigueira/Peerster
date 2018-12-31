@@ -15,19 +15,22 @@ func NewStorageMap() *StorageMap {
 }
 
 //Store - stores data in map, indexed by its key.
-func (sm *StorageMap) Store(key [IDByteSize]byte, data []byte) (isNew bool) {
+func (sm *StorageMap) Store(key TypeID, data []byte) (isNew bool) {
 	_, loaded := sm.ByteMap.LoadOrStore(key, data)
 	return !loaded
 }
 
 //Delete - deletes data indexed by 'key' from storage.
-func (sm *StorageMap) Delete(key [IDByteSize]byte) {
+func (sm *StorageMap) Delete(key TypeID) {
 	sm.ByteMap.Delete(key)
 }
 
 //Retrieve - returns data indexed by 'key', if present.
-func (sm *StorageMap) Retrieve(key [IDByteSize]byte) (data []byte, ok bool) {
+func (sm *StorageMap) Retrieve(key TypeID) (data []byte, ok bool) {
 	d, ok := sm.ByteMap.Load(key)
+	if !ok {
+		return
+	}
 	data = d.([]byte)
 	return
 }

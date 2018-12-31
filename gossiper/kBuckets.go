@@ -13,7 +13,7 @@ func newBucket(g *Gossiper) *bucket {
 	return &bucket{Nodes: make([]*dht.NodeState, 0), Gossiper: g}
 }
 
-func (b *bucket) updateNode(ns *dht.NodeState) {
+func (b *bucket) updateNode(ns *dht.NodeState) (changed bool) {
 	for i, node := range b.Nodes {
 		if node.NodeID == ns.NodeID {
 			temp := append([]*dht.NodeState{node}, b.Nodes[:i]...)
@@ -32,14 +32,15 @@ func (b *bucket) updateNode(ns *dht.NodeState) {
 	}
 
 	b.Nodes = append([]*dht.NodeState{ns}, b.Nodes...)
+	return true
 }
 
 type bucketTable struct {
-	MyNodeID [dht.IDByteSize]byte
+	MyNodeID dht.TypeID
 	Buckets  [dht.IDByteSize * 8]*bucket
 }
 
-func newBucketTable(myNodeID [dht.IDByteSize]byte, g *Gossiper) *bucketTable {
+func newBucketTable(myNodeID dht.TypeID, g *Gossiper) *bucketTable {
 	buckets := [dht.IDByteSize * 8]*bucket{}
 	for i := range buckets {
 		buckets[i] = newBucket(g)
@@ -47,14 +48,15 @@ func newBucketTable(myNodeID [dht.IDByteSize]byte, g *Gossiper) *bucketTable {
 	return &bucketTable{MyNodeID: myNodeID, Buckets: buckets}
 }
 
-func (bt *bucketTable) updateNode(ns *dht.NodeState) {
+func (bt *bucketTable) updateNode(ns *dht.NodeState) (changed bool) {
 	clb := dht.CommonLeadingBits(bt.MyNodeID, ns.NodeID)
 	if clb < dht.IDByteSize*8 {
-		bt.Buckets[clb].updateNode(ns)
+		return bt.Buckets[clb].updateNode(ns)
 	}
+	return false
 }
 
-func (bt *bucketTable) alphaClosest(target [dht.IDByteSize]byte, alpha int) (results []*dht.NodeState) {
+func (bt *bucketTable) alphaClosest(target dht.TypeID, alpha int) (results []*dht.NodeState) {
 	results = make([]*dht.NodeState, 0)
 	for _, bucket := range bt.Buckets {
 		for _, node := range bucket.Nodes {
@@ -62,7 +64,9 @@ func (bt *bucketTable) alphaClosest(target [dht.IDByteSize]byte, alpha int) (res
 				results = append(results, node)
 			} else {
 				results = dht.InsertOrdered(target, results, node)
-				results = results[:bucketSize]
+				if len(results) > bucketSize {
+					results = results[:bucketSize]
+				}
 			}
 		}
 	}

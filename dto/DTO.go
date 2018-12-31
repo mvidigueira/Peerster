@@ -846,12 +846,18 @@ func (fts *FileToSearch) GetKeywords() []string {
 	return fts.Keywords
 }
 
+type DHTLookup struct {
+	Node *dht.TypeID
+	Key  *dht.TypeID
+}
+
 //ClientRequest - protocol structure to be serialized and sent from client to gossiper
 type ClientRequest struct {
 	Packet       *GossipPacket
 	FileShare    *FileToShare
 	FileDownload *FileToDownload
 	FileSearch   *FileToSearch
+	DHTLookup    *DHTLookup
 }
 
 //GetUnderlyingType - returns the underlying type of the client request, or the empty string in case of no subtype
@@ -864,7 +870,12 @@ func (cr *ClientRequest) GetUnderlyingType() (subtype string) {
 		subtype = "fileDownload"
 	} else if cr.FileSearch != nil {
 		subtype = "fileSearch"
+	} else if cr.DHTLookup != nil && cr.DHTLookup.Node != nil {
+		subtype = "nodeSearch"
+	} else if cr.DHTLookup != nil && cr.DHTLookup.Key != nil {
+		subtype = "keySearch"
 	} else {
+		fmt.Printf("%v", cr)
 		subtype = ""
 	}
 	return

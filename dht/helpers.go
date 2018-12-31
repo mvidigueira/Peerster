@@ -2,10 +2,11 @@ package dht
 
 import (
 	"crypto/rand"
+	"fmt"
 	"math/bits"
 )
 
-func xorDistance(id1, id2 [IDByteSize]byte) (result [IDByteSize]byte) {
+func xorDistance(id1, id2 TypeID) (result TypeID) {
 	for i := range result {
 		result[i] = id1[i] ^ id2[i]
 	}
@@ -15,7 +16,7 @@ func xorDistance(id1, id2 [IDByteSize]byte) (result [IDByteSize]byte) {
 // id1 > id2  -->  1
 // id1 = id2  -->  0
 // id1 < id2  --> -1
-func compare(id1, id2 [IDByteSize]byte) int {
+func compare(id1, id2 TypeID) int {
 	for i, v := range id1 {
 		if v < id2[i] {
 			return -1
@@ -27,14 +28,14 @@ func compare(id1, id2 [IDByteSize]byte) int {
 }
 
 // returns true if id2 is closer to target than id1, false otherwise
-func isCloser(target, id1, id2 [IDByteSize]byte) (id2Closer bool) {
+func isCloser(target, id1, id2 TypeID) (id2Closer bool) {
 	id1C := xorDistance(target, id1)
 	id2C := xorDistance(target, id2)
 	return compare(id1C, id2C) > 0
 }
 
 // prevClosest must be ordered from closest to furthest away
-func InsertOrdered(target [IDByteSize]byte, prevClosest []*NodeState, potential *NodeState) (closest []*NodeState) {
+func InsertOrdered(target TypeID, prevClosest []*NodeState, potential *NodeState) (closest []*NodeState) {
 	for i, prev := range prevClosest {
 		if isCloser(target, prev.NodeID, potential.NodeID) {
 			temp := append([]*NodeState{potential}, prevClosest[i:]...)
@@ -42,28 +43,42 @@ func InsertOrdered(target [IDByteSize]byte, prevClosest []*NodeState, potential 
 			return
 		}
 	}
-	closest = prevClosest
+	closest = append(prevClosest, potential)
 	return
 }
 
-func RandNodeID(base [IDByteSize]byte, leadingBitsInCommon int) (generated [IDByteSize]byte) {
+func RandNodeID(base TypeID, leadingBitsInCommon int) (generated TypeID) {
 	rand.Read(generated[:])
-	copy(generated[:leadingBitsInCommon/8+1], base[:leadingBitsInCommon/8+1])
+	//fmt.Printf("Generated: %s\n", generated)
+	copy(generated[:leadingBitsInCommon/8], base[:leadingBitsInCommon/8])
+	//fmt.Printf("After Copy: %s\n", generated)
+
+	b1 := byte(0x80) >> uint(leadingBitsInCommon%8) //selects bit
+	b2 := base[leadingBitsInCommon/8] & b1          //mask
+	b2 = ^b2                                        //reverse
+	b2 &= b1                                        //mask
+
 	if leadingBitsInCommon%8 > 0 {
 		b := byte(0xFF) >> uint(leadingBitsInCommon%8)
-		generated[leadingBitsInCommon/8+1] &= b
-		base[leadingBitsInCommon/8+1] &= ^b
-		generated[leadingBitsInCommon/8+1] |= base[leadingBitsInCommon/8+1]
+		generated[leadingBitsInCommon/8] &= b
+		base[leadingBitsInCommon/8] &= ^b
+		generated[leadingBitsInCommon/8] |= base[leadingBitsInCommon/8]
 	}
+
+	generated[leadingBitsInCommon/8] &= ^b1 //cleans bit
+	generated[leadingBitsInCommon/8] |= b2  //sets bit
+
+	//fmt.Printf("After Second Copy: %s\n", generated)
 	return
 }
 
-func InitialRandNodeID() (generated [IDByteSize]byte) {
+func InitialRandNodeID() (generated TypeID) {
 	rand.Read(generated[:])
+	fmt.Printf("Generated ID: %x\n", generated)
 	return
 }
 
-func CommonLeadingBits(id1, id2 [IDByteSize]byte) (inCommon int) {
+func CommonLeadingBits(id1, id2 TypeID) (inCommon int) {
 	for i, v := range id1 {
 		xored := v ^ id2[i]
 		if xored != 0 {
@@ -74,4 +89,16 @@ func CommonLeadingBits(id1, id2 [IDByteSize]byte) (inCommon int) {
 	}
 
 	return
+}
+
+//ConvertToTypeID - Converts a slice of undetermined size to TypeID
+//Returns the TypeID, and true if the conversion was successful (false otherwise)
+func ConvertToTypeID(idB []byte) (id TypeID, ok bool) {
+	if len(idB) != IDByteSize {
+		fmt.Printf("ID length mismatch. Is %v but should be %v.\n", len(idB), IDByteSize)
+		ok = false
+		return
+	}
+	copy(id[:], idB)
+	return id, true
 }

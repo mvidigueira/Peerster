@@ -1,6 +1,7 @@
 package gossiper
 
 import (
+	"fmt"
 	"log"
 	"math/rand"
 	"net"
@@ -52,14 +53,15 @@ type Gossiper struct {
 
 	blockchainLedger *BlockchainLedger
 
-	dhtMyID     [dht.IDByteSize]byte
-	dhtChanMap  *dht.ChanMap
-	bucketTable *bucketTable
-	storage     *dht.StorageMap
+	dhtMyID      [dht.IDByteSize]byte
+	dhtChanMap   *dht.ChanMap
+	bucketTable  *bucketTable
+	storage      *dht.StorageMap
+	dhtBootstrap string
 }
 
 //NewGossiper creates a new gossiper
-func NewGossiper(address, name string, UIport string, peers []string, simple bool, rtimeout int) *Gossiper {
+func NewGossiper(address, name string, UIport string, peers []string, simple bool, rtimeout int, dhtBootstrap string) *Gossiper {
 	gossipAddr, err := net.ResolveUDPAddr("udp4", address)
 	dto.LogError(err)
 	clientAddr, err := net.ResolveUDPAddr("udp4", "localhost:"+UIport)
@@ -101,9 +103,10 @@ func NewGossiper(address, name string, UIport string, peers []string, simple boo
 
 		blockchainLedger: NewBlockchainLedger(),
 
-		dhtMyID:    dht.InitialRandNodeID(),
-		dhtChanMap: dht.NewChanMap(),
-		storage:    dht.NewStorageMap(),
+		dhtMyID:      dht.InitialRandNodeID(),
+		dhtChanMap:   dht.NewChanMap(),
+		storage:      dht.NewStorageMap(),
+		dhtBootstrap: dhtBootstrap,
 	}
 	g.bucketTable = newBucketTable(g.dhtMyID, g)
 	return g
@@ -133,12 +136,15 @@ func (g *Gossiper) Start() {
 
 	cFileNaming := make(chan *dto.PacketAddressPair) //blockchain
 	cBlocks := make(chan *dto.PacketAddressPair)     //blockchain
-	go g.blockchainMiningRoutine(cFileNaming, cBlocks)
+	//go g.blockchainMiningRoutine(cFileNaming, cBlocks)
 
-	go g.receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, cDataReply, cSearcRequest, cSearchReply, cFileNaming, cBlocks)
-	go g.antiEntropy()
+	cDHT := make(chan *dto.PacketAddressPair)
+	go g.dhtMessageListenRoutine(cDHT)
 
-	go g.periodicRouteRumor() //DSDV
+	go g.receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, cDataReply, cSearcRequest, cSearchReply, cFileNaming, cBlocks, cDHT)
+	//go g.antiEntropy()
+
+	//go g.periodicRouteRumor() //DSDV
 
 	cUI := make(chan *dto.PacketAddressPair)
 	go g.clientListenRoutine(cUI)
@@ -153,7 +159,14 @@ func (g *Gossiper) Start() {
 	cFileSearch := make(chan *dto.FileToSearch)
 	go g.clientFileSearchListenRoutine(cFileSearch)
 
-	g.receiveClientUDP(cUI, cUIPM, cFileShare, cFileDL, cFileSearch)
+	cCliDHT := make(chan *dto.DHTLookup, 10)
+	go g.clientDHTListenRoutine(cCliDHT)
+
+	if g.dhtBootstrap != "" {
+		g.dhtJoin(g.dhtBootstrap)
+	}
+
+	g.receiveClientUDP(cUI, cUIPM, cFileShare, cFileDL, cFileSearch, cCliDHT)
 }
 
 //addToPeers - adds a peer (ip:port) to the list of known peers
@@ -192,7 +205,7 @@ func (g *Gossiper) sendStatusPacket(peerAddress string) {
 
 //receiveClientUDP - receives gossip packets from CLIENTS and forwards them to the provided channel,
 //setting the origin in the process
-func (g *Gossiper) receiveClientUDP(cRumoring, cPMing chan *dto.PacketAddressPair, cFileShare chan string, cFileDL chan *dto.FileToDownload, cFileSearch chan *dto.FileToSearch) {
+func (g *Gossiper) receiveClientUDP(cRumoring, cPMing chan *dto.PacketAddressPair, cFileShare chan string, cFileDL chan *dto.FileToDownload, cFileSearch chan *dto.FileToSearch, cCliDHT chan *dto.DHTLookup) {
 	for {
 		request := &dto.ClientRequest{}
 		packetBytes := make([]byte, packetSize)
@@ -204,7 +217,9 @@ func (g *Gossiper) receiveClientUDP(cRumoring, cPMing chan *dto.PacketAddressPai
 			log.Println(err)
 			continue
 		}
+
 		err = protobuf.Decode(packetBytes, request)
+
 		switch request.GetUnderlyingType() {
 		case "simple":
 			packet := request.Packet
@@ -232,6 +247,12 @@ func (g *Gossiper) receiveClientUDP(cRumoring, cPMing chan *dto.PacketAddressPai
 			cFileDL <- request.FileDownload
 		case "fileSearch":
 			cFileSearch <- request.FileSearch
+		case "nodeSearch":
+			fmt.Printf("Received client lookup request\n")
+			cCliDHT <- request.DHTLookup
+		case "keySearch":
+			fmt.Printf("Received client lookup request\n")
+			cCliDHT <- request.DHTLookup
 		default:
 			log.Println("Unrecognized message type. Ignoring...")
 		}
@@ -240,7 +261,7 @@ func (g *Gossiper) receiveClientUDP(cRumoring, cPMing chan *dto.PacketAddressPai
 
 //receiveExternalUDP - receives gossip packets from PEERS and forwards them to the appropriate channel
 //among those provided, depending on whether they are rumor, simple or status packets
-func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, cDataReply, cSearcRequest, cSearchReply, cFileNaming, cBlocks chan *dto.PacketAddressPair) {
+func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, cDataReply, cSearcRequest, cSearchReply, cFileNaming, cBlocks, cDHT chan *dto.PacketAddressPair) {
 	for {
 		packet := &dto.GossipPacket{}
 		packetBytes := make([]byte, packetSize)
@@ -316,6 +337,12 @@ func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, c
 				log.Println("Running on 'simple' mode. Ignoring blockpublish message from " + senderAddress + "...")
 			} else {
 				cBlocks <- pap
+			}
+		case "dhtmessage":
+			if g.UseSimple {
+				log.Println("Running on 'simple' mode. Ignoring dhtmessage message from " + senderAddress + "...")
+			} else {
+				cDHT <- pap
 			}
 		default:
 			log.Println("Unrecognized message type. Ignoring message from " + senderAddress + "...")
