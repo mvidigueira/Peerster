@@ -4,6 +4,8 @@ import (
 	"hash"
 	"hash/fnv"
 	"math"
+
+	"github.com/spaolacci/murmur3"
 )
 
 const uint64Size = 64
@@ -25,7 +27,7 @@ func New(k, m uint64) *BloomFilter {
 		k:             k,
 		n:             0,
 		m:             m,
-		hashFunctions: []hash.Hash64{fnv.New64(), fnv.New64a()},
+		hashFunctions: []hash.Hash64{fnv.New64(), fnv.New64a(), murmur3.New64()},
 	}
 }
 

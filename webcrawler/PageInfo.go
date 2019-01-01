@@ -1,7 +1,9 @@
 package webcrawler
 
+import "github.com/mvidigueira/Peerster/dht"
+
 type PageInfo struct {
-	Hyperlinks []string
-	Words      []string
-	Hash       []byte
+	Hyperlinks         []string
+	KeywordFrequencies map[string]int
+	Hash               [dht.IDByteSize]byte
 }

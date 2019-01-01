@@ -72,7 +72,6 @@ func (sm *StorageMap) StoreKeywordToURLMapping(key TypeID, data []byte) (ok bool
 	}
 
 	// Make sure that that the keywords correspond, they should but just to make sure.
-
 	if oldKeywordToUrlMap.Keyword != newKeywordToUrlMap.Keyword {
 		fmt.Println("Error, Keywords does not correspond.")
 		return false
@@ -87,8 +86,6 @@ func (sm *StorageMap) StoreKeywordToURLMapping(key TypeID, data []byte) (ok bool
 		}
 		oldKeywordToUrlMap.Urls[k] = 1
 	}
-
-	//oldKeywordToUrlMap.Urls = append(oldKeywordToUrlMap.Urls, newKeywordToUrlMap.Urls...)
 
 	newData, err := protobuf.Encode(oldKeywordToUrlMap)
 	if err != nil {

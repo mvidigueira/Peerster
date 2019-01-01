@@ -103,7 +103,7 @@ func (g *Gossiper) replyStore(msg *dht.Message) {
 		}
 	case "PUT":
 		// My goal was to implement a generic PUT method but I did not manage to unite protobuf and interfaces
-		// hence I gave up temporarility and created a PUT method for the specific use case (keyword -> (url, keyword frequency)) I have at the momet.
+		// hence I gave up temporarility and created a PUT method for the specific use case (keyword -> (url, keyword frequency)) I have at the moment.
 		ok := g.storage.StoreKeywordToURLMapping(msg.Store.Key, msg.Store.Data)
 		if !ok {
 			fmt.Printf("Failed to finish PUT operation.\n")
@@ -124,7 +124,7 @@ func (g *Gossiper) sendLookupNode(ns *dht.NodeState, id dht.TypeID) chan *dht.Me
 		panic("Something went very wrong")
 	}
 
-	fmt.Printf("Sending node lookup for %x to node %x\n", id, ns.NodeID)
+	//fmt.Printf("Sending node lookup for %x to node %x\n", id, ns.NodeID)
 
 	g.sendUDP(packet, ns.Address)
 
@@ -183,7 +183,7 @@ func (g *Gossiper) dhtMessageListenRoutine(cDHTMessage chan *dto.PacketAddressPa
 			fmt.Printf("PING from %x\n", msg.SenderID)
 			g.replyPing(sender, msg)
 		case "nodelookup":
-			fmt.Printf("NODE LOOKUP for node %x from %x\n", msg.NodeLookup.NodeID, msg.SenderID)
+			//fmt.Printf("NODE LOOKUP for node %x from %x\n", msg.NodeLookup.NodeID, msg.SenderID)
 			g.replyLookupNode(sender, msg)
 		case "valuelookup":
 			fmt.Printf("VALUE LOOKUP for key %x from %x\n", msg.ValueLookup.Key, msg.SenderID)
@@ -192,7 +192,7 @@ func (g *Gossiper) dhtMessageListenRoutine(cDHTMessage chan *dto.PacketAddressPa
 			fmt.Printf("PING REPLY from %x\n", msg.SenderID)
 			g.dhtChanMap.InformListener(msg.Nonce, msg)
 		case "nodereply":
-			fmt.Printf("NODE REPLY with results %s from %x\n", dht.String(msg.NodeReply.NodeStates), msg.SenderID)
+			//fmt.Printf("NODE REPLY with results %s from %x\n", dht.String(msg.NodeReply.NodeStates), msg.SenderID)
 			g.dhtChanMap.InformListener(msg.Nonce, msg)
 		case "valuereply":
 			if msg.ValueReply.Data != nil {

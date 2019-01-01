@@ -1,7 +1,6 @@
 package gossiper
 
 import (
-	"crypto/sha1"
 	"fmt"
 	"log"
 	"math/rand"
@@ -173,8 +172,8 @@ func (g *Gossiper) Start() {
 		g.dhtJoin(g.dhtBootstrap)
 	}
 
-	g.webCrawler.Start()
-	go g.webCrawlerListenerRoutine()
+	//go g.webCrawlerListenerRoutine()
+	//g.webCrawler.Start()
 
 	g.receiveClientUDP(cUI, cUIPM, cFileShare, cFileDL, cFileSearch, cCliDHT)
 }
@@ -455,55 +454,6 @@ func (g *Gossiper) rumorListenRoutine(cRumor chan *dto.PacketAddressPair) {
 			}
 		} else {
 			g.sendAllPeers(packet, pap.GetSenderAddress())
-		}
-	}
-}
-
-//webCrawlerListenRouting - deals with indexing of webpages and hyperlink distribution
-func (g *Gossiper) webCrawlerListenerRoutine() {
-	for {
-		select {
-		case packet := <-g.webCrawler.OutChan:
-			switch {
-			case packet.HyperlinkPackage != nil:
-				links := packet.HyperlinkPackage.Links
-
-				domains := map[string][]string{}
-				for _, hyperlink := range links {
-					hash := sha1.Sum([]byte(hyperlink))
-					closestNodes := g.LookupNodes(hash)
-					if len(closestNodes) == 0 {
-						log.Fatal("LookupNodes returned an empty list.")
-					}
-					responsibleNode := closestNodes[0].Address
-					hyperlinks, found := domains[responsibleNode]
-					if !found {
-						domains[responsibleNode] = []string{hyperlink}
-					} else {
-						hyperlinks = append(hyperlinks, hyperlink)
-						domains[responsibleNode] = hyperlinks
-					}
-				}
-
-				for owner, hyperlinks := range domains {
-					if owner == g.address {
-						// Send back the urls belonging to this nodes domain
-						g.webCrawler.InChan <- &webcrawler.CrawlerPacket{
-							HyperlinkPackage: &webcrawler.HyperlinkPackage{
-								Links: hyperlinks,
-							},
-						}
-					} else {
-						g.sendUDP(&dto.GossipPacket{
-							HyperlinkMessage: &webcrawler.HyperlinkPackage{
-								Links: hyperlinks,
-							},
-						}, owner)
-					}
-				}
-			case packet.IndexPackage != nil:
-				// Do something with the (keywords, url) pairs
-			}
 		}
 	}
 }
