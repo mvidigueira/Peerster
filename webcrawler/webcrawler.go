@@ -53,7 +53,7 @@ func (wc *Crawler) Start() {
 	if wc.leader {
 		wc.InChan <- &CrawlerPacket{
 			HyperlinkPackage: &HyperlinkPackage{
-				Links: []string{"/wiki/Sweden"},
+				Links: []string{"/wiki/Swedish_Empire"},
 			},
 		}
 	}
@@ -74,7 +74,6 @@ func (wc *Crawler) crawl() {
 				// Get next page to crawl
 				nextPage := wc.popQueue()
 
-				// Crawl page
 				page := wc.crawlUrl(nextPage)
 
 				fmt.Printf("Crawled %s, found %d hyperlinks and %d keywords.\n", nextPage, len(page.Hyperlinks), len(page.KeywordFrequencies))
@@ -258,13 +257,22 @@ func (wc *Crawler) cleanPage(doc goquery.Document) goquery.Document {
 	doc.Find("div[id=catlinks]").Each(func(i int, el *goquery.Selection) {
 		el.Remove()
 	})
+	doc.Find("div[id=footer]").Each(func(i int, el *goquery.Selection) {
+		el.Remove()
+	})
+	doc.Find("div[class=nowraplinks]").Each(func(i int, el *goquery.Selection) {
+		el.Remove()
+	})
+
 	doc.RemoveClass("reflist")
+	doc.RemoveClass("nowraplinks")
 
 	return doc
 }
 
 // Downloads a page using HTTP
 func (wc *Crawler) getPage(url string) *goquery.Document {
+	fmt.Println(wc.domain + url)
 	res, err := http.Get(wc.domain + url)
 	if err != nil {
 		fmt.Println("http transport error is:", err)

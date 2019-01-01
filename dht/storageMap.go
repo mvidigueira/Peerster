@@ -1,6 +1,7 @@
 package dht
 
 import (
+	"bytes"
 	"fmt"
 	"protobuf"
 	"sync"
@@ -42,10 +43,14 @@ func (sm *StorageMap) Retrieve(key TypeID) (data []byte, ok bool) {
 // the keywords and URLs in struct but I could not think about any other way.
 // The definiton of KeywordToURLMap will move to the webcrawler package but it is in a seperate branch at the moment. I will move this when
 // I merge the two branches.
-
 type KeywordToURLMap struct {
-	Keyword string
-	Urls    map[string]int // websiteUrl:NumberOfOccurances
+	KeywordHash [IDByteSize]byte
+	Urls        map[string]int // websiteUrl:NumberOfOccurances
+}
+
+// You cannot serialize plain lists with protobuf but you have to wrap it in a struct
+type KeywordToURLBatchStruct struct {
+	List []*KeywordToURLMap
 }
 
 func (sm *StorageMap) StoreKeywordToURLMapping(key TypeID, data []byte) (ok bool) {
@@ -72,19 +77,14 @@ func (sm *StorageMap) StoreKeywordToURLMapping(key TypeID, data []byte) (ok bool
 	}
 
 	// Make sure that that the keywords correspond, they should but just to make sure.
-	if oldKeywordToUrlMap.Keyword != newKeywordToUrlMap.Keyword {
+	if !bytes.Equal(oldKeywordToUrlMap.KeywordHash[:], newKeywordToUrlMap.KeywordHash[:]) {
 		fmt.Println("Error, Keywords does not correspond.")
 		return false
 	}
 
 	// Append new urls to old struct
-	for k, _ := range newKeywordToUrlMap.Urls {
-		val, found := oldKeywordToUrlMap.Urls[k]
-		if found {
-			oldKeywordToUrlMap.Urls[k] = val + 1
-			continue
-		}
-		oldKeywordToUrlMap.Urls[k] = 1
+	for k, val := range newKeywordToUrlMap.Urls {
+		oldKeywordToUrlMap.Urls[k] = val
 	}
 
 	newData, err := protobuf.Encode(oldKeywordToUrlMap)

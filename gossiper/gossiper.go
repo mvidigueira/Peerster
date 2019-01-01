@@ -172,8 +172,8 @@ func (g *Gossiper) Start() {
 		g.dhtJoin(g.dhtBootstrap)
 	}
 
-	//go g.webCrawlerListenerRoutine()
-	//g.webCrawler.Start()
+	go g.webCrawlerListenerRoutine()
+	g.webCrawler.Start()
 
 	g.receiveClientUDP(cUI, cUIPM, cFileShare, cFileDL, cFileSearch, cCliDHT)
 }

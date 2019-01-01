@@ -1,6 +1,7 @@
 package gossiper
 
 import (
+	"encoding/hex"
 	"fmt"
 	"math/rand"
 	"protobuf"
@@ -92,6 +93,8 @@ func (g *Gossiper) sendStore(ns *dht.NodeState, key dht.TypeID, data []byte, sto
 	return nil
 }
 
+var stores = 0
+
 // replyStore - "replies" to a store rpc (stores the data locally)
 func (g *Gossiper) replyStore(msg *dht.Message) {
 	storeType := msg.Store.Type
@@ -104,10 +107,21 @@ func (g *Gossiper) replyStore(msg *dht.Message) {
 	case "PUT":
 		// My goal was to implement a generic PUT method but I did not manage to unite protobuf and interfaces
 		// hence I gave up temporarility and created a PUT method for the specific use case (keyword -> (url, keyword frequency)) I have at the moment.
-		ok := g.storage.StoreKeywordToURLMapping(msg.Store.Key, msg.Store.Data)
-		if !ok {
-			fmt.Printf("Failed to finish PUT operation.\n")
+		batchTemp := &dht.KeywordToURLBatchStruct{}
+		protobuf.Decode(msg.Store.Data, batchTemp)
+		for _, item := range batchTemp.List {
+			stores++
+			dat, err := protobuf.Encode(item)
+			if err != nil {
+				fmt.Printf("Error decode")
+				return
+			}
+			ok := g.storage.StoreKeywordToURLMapping(item.KeywordHash, dat)
+			if !ok {
+				fmt.Printf("Failed to finish PUT operation.\n")
+			}
 		}
+
 	default:
 		fmt.Printf("Unknown store type: %s.", storeType)
 	}
@@ -202,7 +216,7 @@ func (g *Gossiper) dhtMessageListenRoutine(cDHTMessage chan *dto.PacketAddressPa
 			}
 			g.dhtChanMap.InformListener(msg.Nonce, msg)
 		case "store":
-			fmt.Printf("STORE REQUEST from %x\n", msg.SenderID)
+			//fmt.Printf("STORE REQUEST from %x\n", msg.SenderID)
 			g.replyStore(msg)
 		}
 	}
@@ -255,7 +269,7 @@ func (g *Gossiper) clientDHTListenRoutine(cCliDHT chan *dto.DHTRequest) {
 				newKeywordToUrlMap := &dht.KeywordToURLMap{}
 				err := protobuf.Decode(data, newKeywordToUrlMap)
 				if err == nil && found {
-					fmt.Printf("Keyword: %s\n", newKeywordToUrlMap.Keyword)
+					fmt.Printf("Keyword: %s\n", hex.EncodeToString(newKeywordToUrlMap.KeywordHash[:]))
 					for k, v := range newKeywordToUrlMap.Urls {
 						fmt.Printf("document: %s, number of occurances in document: %d\n", k, v)
 					}

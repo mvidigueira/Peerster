@@ -1,8 +1,8 @@
 package gossiper
 
 import (
-	"crypto/sha1"
 	"fmt"
+	"log"
 	"protobuf"
 	"time"
 
@@ -30,44 +30,88 @@ func (g *Gossiper) webCrawlerListenerRoutine() {
 
 // The maximum safe size of a UDP packet is 8192 but it could happen that some pages contains a set of urls
 // which is larger than 8192 bytes and hence we need to break down the url packages into batches which are smaller than 8192bytes.
-func (g *Gossiper) batchSendURLS(owner string, hyperlinks []string) {
-	udpMaxSize := 8192 // Maximum safe UDP size.
-	packet := make([]string, 0, udpMaxSize)
+func (g *Gossiper) createUDPBatches(owner *dht.NodeState, items []interface{}) []interface{} {
+	udpMaxSize := 7500 // Maximum safe UDP size.
+	packet := make([]interface{}, 0, udpMaxSize)
 	packetSize := 0
-	for _, hyperlink := range hyperlinks {
-		if packetSize+len(hyperlink) < udpMaxSize {
-			packetSize += len(hyperlink)
-			packet = append(packet, hyperlink)
+	batches := make([]interface{}, 0, 1)
+	for _, item := range items {
+		var itemLength int
+		switch v := item.(type) {
+		case string:
+			itemLength = len(v)
+		case *dht.KeywordToURLMap:
+			bytes, _ := protobuf.Encode(item)
+			itemLength = len(bytes)
+		default:
+			log.Fatal("invalid interface type")
+		}
+		if packetSize+itemLength < udpMaxSize {
+			packetSize += itemLength
+			packet = append(packet, item)
 		} else {
-			gossiperPacket := &dto.GossipPacket{
-				HyperlinkMessage: &webcrawler.HyperlinkPackage{
-					Links: packet,
-				},
-			}
-			fmt.Printf("SENDING UPD WITH SIZE %d\n", len(packet))
-			g.sendUDP(gossiperPacket, owner)
+			batches = append(batches, packet)
 			packetSize = 0
-			packet = make([]string, 0, udpMaxSize)
+			packet = make([]interface{}, 0, udpMaxSize)
 		}
 	}
 	if len(packet) > 0 {
+		batches = append(batches, packet)
+	}
+	return batches
+}
+
+func (g *Gossiper) batchSendURLS(owner *dht.NodeState, hyperlinks []string) {
+	s := make([]interface{}, len(hyperlinks))
+	for i, v := range hyperlinks {
+		s[i] = v
+	}
+	batches := g.createUDPBatches(owner, s)
+	for _, batch := range batches {
+		tmp := make([]string, len(batch.([]interface{})))
+		for k, b := range batch.([]interface{}) {
+			tmp[k] = b.(string)
+		}
 		gossiperPacket := &dto.GossipPacket{
 			HyperlinkMessage: &webcrawler.HyperlinkPackage{
-				Links: packet,
+				Links: tmp,
 			},
 		}
-		g.sendUDP(gossiperPacket, owner)
+		g.sendUDP(gossiperPacket, owner.Address)
 	}
-	fmt.Printf("SENDING UPD WITH SIZE %d\n", len(packet))
+}
+
+func (g *Gossiper) batchSendKeywords(owner *dht.NodeState, items []*dht.KeywordToURLMap) {
+	s := make([]interface{}, len(items))
+	for i, v := range items {
+		s[i] = v
+	}
+	batches := g.createUDPBatches(owner, s)
+	for _, batch := range batches {
+		tmp := make([]*dht.KeywordToURLMap, len(batch.([]interface{})))
+		for k, b := range batch.([]interface{}) {
+			tmp[k] = b.(*dht.KeywordToURLMap)
+		}
+		packetBytes, err := protobuf.Encode(&dht.KeywordToURLBatchStruct{List: tmp})
+		if err != nil {
+			fmt.Println(err)
+			fmt.Printf("Error encoding urlToKeywordMap.\n")
+			break
+		}
+		err = g.sendStore(owner, [20]byte{}, packetBytes, "PUT")
+		if err != nil {
+			fmt.Printf("Failed to store key.\n")
+		}
+	}
 }
 
 // Identifies the responsible node for each hyperlink. If the hyperlink belongs to this node, then the hyperlinks are simply sent back
 // to the local webcrawler. If the hyperlinks belong to another webcrawlers domain, then they will be sent to the corresponding node.
 func (g *Gossiper) distributeHyperlinks(hyperlinkPackage *webcrawler.HyperlinkPackage) {
 	links := hyperlinkPackage.Links
-	domains := map[string][]string{}
+	domains := map[*dht.NodeState][]string{}
 	for _, hyperlink := range links {
-		hash := sha1.Sum([]byte(hyperlink))
+		hash := dht.GenerateKeyHash(hyperlink)
 		closestNodes := g.LookupNodes(hash)
 		if len(closestNodes) == 0 {
 			fmt.Println("LookupNodes returned an empty list... Retrying in 5 seconds.")
@@ -79,7 +123,7 @@ func (g *Gossiper) distributeHyperlinks(hyperlinkPackage *webcrawler.HyperlinkPa
 			}()
 			break
 		}
-		responsibleNode := closestNodes[0].Address
+		responsibleNode := closestNodes[0]
 		hyperlinks, found := domains[responsibleNode]
 		if !found {
 			domains[responsibleNode] = []string{hyperlink}
@@ -90,7 +134,7 @@ func (g *Gossiper) distributeHyperlinks(hyperlinkPackage *webcrawler.HyperlinkPa
 	}
 
 	for owner, hyperlinks := range domains {
-		if owner == g.address {
+		if owner.Address == g.address {
 			// Send back the urls belonging to this nodes domain
 			g.webCrawler.InChan <- &webcrawler.CrawlerPacket{
 				HyperlinkPackage: &webcrawler.HyperlinkPackage{
@@ -107,11 +151,10 @@ func (g *Gossiper) distributeHyperlinks(hyperlinkPackage *webcrawler.HyperlinkPa
 // Save each keyword of a url at the responsible node
 func (g *Gossiper) indexKeywordsInDHT(indexPackage *webcrawler.IndexPackage) {
 	frequencies, url := indexPackage.KeywordFrequencies, indexPackage.Url
+	batches := map[string][]*dht.KeywordToURLMap{}
+	addressToNodeState := map[string]*dht.NodeState{}
 	for k, v := range frequencies {
-		urlToKeywordMap := &dht.KeywordToURLMap{
-			Keyword: k,
-			Urls:    map[string]int{url: v},
-		}
+
 		keyHash := dht.GenerateKeyHash(k)
 		kClosest := g.LookupNodes(keyHash)
 		if len(kClosest) == 0 {
@@ -120,15 +163,27 @@ func (g *Gossiper) indexKeywordsInDHT(indexPackage *webcrawler.IndexPackage) {
 		}
 		closest := kClosest[0]
 
-		packetBytes, err := protobuf.Encode(urlToKeywordMap)
-		if err != nil {
-			fmt.Printf("Error encoding urlToKeywordMap\n")
-			break
+		addressToNodeState[closest.Address] = closest
+
+		urlToKeywordMap := &dht.KeywordToURLMap{
+			KeywordHash: keyHash,
+			Urls:        map[string]int{url: v},
 		}
-		err = g.sendStore(closest, keyHash, packetBytes, "PUT")
-		if err != nil {
-			fmt.Printf("Failed to store key %s.\n", keyHash)
+
+		val, found := batches[closest.Address]
+		if !found {
+			batches[closest.Address] = []*dht.KeywordToURLMap{
+				urlToKeywordMap,
+			}
+		} else {
+			batches[closest.Address] = append(val, urlToKeywordMap)
 		}
+	}
+
+	for k, batch := range batches {
+		addr, _ := addressToNodeState[k]
+		g.batchSendKeywords(addr, batch)
+
 	}
 }
 
