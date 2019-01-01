@@ -56,6 +56,7 @@ func (msg *Message) GetUnderlyingType() string {
 
 type Store struct {
 	Key  TypeID
+	Type string // PUT or POST
 	Data []byte
 }
 

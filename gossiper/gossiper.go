@@ -159,7 +159,7 @@ func (g *Gossiper) Start() {
 	cFileSearch := make(chan *dto.FileToSearch)
 	go g.clientFileSearchListenRoutine(cFileSearch)
 
-	cCliDHT := make(chan *dto.DHTLookup, 10)
+	cCliDHT := make(chan *dto.DHTRequest, 10)
 	go g.clientDHTListenRoutine(cCliDHT)
 
 	if g.dhtBootstrap != "" {
@@ -205,7 +205,7 @@ func (g *Gossiper) sendStatusPacket(peerAddress string) {
 
 //receiveClientUDP - receives gossip packets from CLIENTS and forwards them to the provided channel,
 //setting the origin in the process
-func (g *Gossiper) receiveClientUDP(cRumoring, cPMing chan *dto.PacketAddressPair, cFileShare chan string, cFileDL chan *dto.FileToDownload, cFileSearch chan *dto.FileToSearch, cCliDHT chan *dto.DHTLookup) {
+func (g *Gossiper) receiveClientUDP(cRumoring, cPMing chan *dto.PacketAddressPair, cFileShare chan string, cFileDL chan *dto.FileToDownload, cFileSearch chan *dto.FileToSearch, cCliDHT chan *dto.DHTRequest) {
 	for {
 		request := &dto.ClientRequest{}
 		packetBytes := make([]byte, packetSize)
@@ -249,10 +249,22 @@ func (g *Gossiper) receiveClientUDP(cRumoring, cPMing chan *dto.PacketAddressPai
 			cFileSearch <- request.FileSearch
 		case "nodeSearch":
 			fmt.Printf("Received client lookup request\n")
-			cCliDHT <- request.DHTLookup
+			dhtRequest := &dto.DHTRequest{
+				Lookup: request.DHTLookup,
+			}
+			cCliDHT <- dhtRequest
 		case "keySearch":
 			fmt.Printf("Received client lookup request\n")
-			cCliDHT <- request.DHTLookup
+			dhtRequest := &dto.DHTRequest{
+				Lookup: request.DHTLookup,
+			}
+			cCliDHT <- dhtRequest
+		case "store":
+			fmt.Printf("Received client dht store request\n")
+			dhtRequest := &dto.DHTRequest{
+				Store: request.DHTStore,
+			}
+			cCliDHT <- dhtRequest
 		default:
 			log.Println("Unrecognized message type. Ignoring...")
 		}

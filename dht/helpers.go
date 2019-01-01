@@ -2,6 +2,8 @@ package dht
 
 import (
 	"crypto/rand"
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	"math/bits"
 )
@@ -101,4 +103,12 @@ func ConvertToTypeID(idB []byte) (id TypeID, ok bool) {
 	}
 	copy(id[:], idB)
 	return id, true
+}
+
+// Converts an arbitrary long key string to a 20byte hexa hash key.
+func GenerateKeyHash(key string) string {
+	byteKey := []byte(key)
+	hash := sha1.Sum(byteKey)
+	key = hex.EncodeToString(hash[:])
+	return key
 }

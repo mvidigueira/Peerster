@@ -3,6 +3,7 @@ package gossiper
 import (
 	"fmt"
 	"math/rand"
+	"protobuf"
 	"strings"
 	"time"
 
@@ -10,8 +11,8 @@ import (
 	"github.com/mvidigueira/Peerster/dto"
 )
 
-func (g *Gossiper) newDHTStore(key dht.TypeID, data []byte) *dht.Message {
-	store := &dht.Store{Key: key, Data: data}
+func (g *Gossiper) newDHTStore(key dht.TypeID, data []byte, storeType string) *dht.Message {
+	store := &dht.Store{Key: key, Data: data, Type: storeType}
 	return &dht.Message{Nonce: rand.Uint64(), SenderID: g.dhtMyID, Store: store}
 }
 
@@ -82,8 +83,8 @@ func (g *Gossiper) replyPing(senderAddr string, ping *dht.Message) {
 }
 
 // sendStore - sends a RPC to node 'ns' for storing the KV pair ('key' - 'data')
-func (g *Gossiper) sendStore(ns *dht.NodeState, key dht.TypeID, data []byte) (err error) {
-	msg := g.newDHTStore(key, data)
+func (g *Gossiper) sendStore(ns *dht.NodeState, key dht.TypeID, data []byte, storeType string) (err error) {
+	msg := g.newDHTStore(key, data, storeType)
 	packet := &dto.GossipPacket{DHTMessage: msg}
 
 	g.sendUDP(packet, ns.Address)
@@ -93,10 +94,24 @@ func (g *Gossiper) sendStore(ns *dht.NodeState, key dht.TypeID, data []byte) (er
 
 // replyStore - "replies" to a store rpc (stores the data locally)
 func (g *Gossiper) replyStore(msg *dht.Message) {
-	isNew := g.storage.Store(msg.Store.Key, msg.Store.Data)
-	if !isNew {
-		fmt.Printf("Repeat store. Key: %x\n", msg.Store.Key)
+	storeType := msg.Store.Type
+	switch storeType {
+	case "POST":
+		isNew := g.storage.Store(msg.Store.Key, msg.Store.Data)
+		if !isNew {
+			fmt.Printf("Repeat store. Key: %x\n", msg.Store.Key)
+		}
+	case "PUT":
+		// My goal was to implement a generic PUT method but I did not manage to unite protobuf and interfaces
+		// hence I gave up temporarility and created a PUT method for the specific use case (keyword -> (url, keyword frequency)) I have at the momet.
+		ok := g.storage.StoreKeywordToURLMapping(msg.Store.Key, msg.Store.Data)
+		if !ok {
+			fmt.Printf("Failed to finish PUT operation.\n")
+		}
+	default:
+		fmt.Printf("Unknown store type: %s.", storeType)
 	}
+
 }
 
 // LookupNode - sends a RPC to node 'ns' for lookup of node with nodeID 'id'
@@ -185,10 +200,11 @@ func (g *Gossiper) dhtMessageListenRoutine(cDHTMessage chan *dto.PacketAddressPa
 			} else {
 				fmt.Printf("VALUE REPLY with results %s from %x\n", dht.String(*msg.ValueReply.NodeStates), msg.SenderID)
 			}
-
 			g.dhtChanMap.InformListener(msg.Nonce, msg)
+		case "store":
+			fmt.Printf("STORE REQUEST from %x\n", msg.SenderID)
+			g.replyStore(msg)
 		}
-
 	}
 }
 
@@ -217,26 +233,55 @@ func (g *Gossiper) printKnownNodes() {
 	fmt.Printf("Known DHT nodes: %s\n", strings.Join(nodes, ", "))
 }
 
-func (g *Gossiper) clientDHTListenRoutine(cCliDHT chan *dto.DHTLookup) {
-	for lookup := range cCliDHT {
-		if lookup.Node != nil {
-			fmt.Printf("Starting lookup for node: %x\n", lookup.Node)
-			closest := g.LookupNodes(*lookup.Node)
+func (g *Gossiper) clientDHTListenRoutine(cCliDHT chan *dto.DHTRequest) {
+	for request := range cCliDHT {
+		switch {
+		case request.Lookup != nil:
+			lookup := request.Lookup
+			if lookup.Node != nil {
+				fmt.Printf("Starting lookup for node: %x\n", lookup.Node)
+				closest := g.LookupNodes(*lookup.Node)
 
-			nodes := make([]string, 0)
-			for _, node := range closest {
-				nodes = append(nodes, fmt.Sprintf("%x", node.NodeID))
-			}
-			fmt.Printf("Closest DHT nodes found: %s\n", strings.Join(nodes, ", "))
-		} else {
-			fmt.Printf("Starting lookup for key: %x\n", *lookup.Key)
-			data, found := g.LookupValue(*lookup.Key)
-
-			if found {
-				fmt.Printf("Found data for key %x.\nPrinting as string: %s\n", *lookup.Key, data)
+				nodes := make([]string, 0)
+				for _, node := range closest {
+					nodes = append(nodes, fmt.Sprintf("%x", node.NodeID))
+				}
+				fmt.Printf("Closest DHT nodes found: %s\n", strings.Join(nodes, ", "))
 			} else {
-				fmt.Printf("Could not find data for key %x\n", *lookup.Key)
+				fmt.Printf("Starting lookup for key: %x\n", *lookup.Key)
+				data, found := g.LookupValue(*lookup.Key)
+
+				// Seperate printing function for lookups containing KeywordToURLMap structs
+				newKeywordToUrlMap := &dht.KeywordToURLMap{}
+				err := protobuf.Decode(data, newKeywordToUrlMap)
+				if err == nil {
+					fmt.Printf("Keyword: %s\n", newKeywordToUrlMap.Keyword)
+					for k, v := range newKeywordToUrlMap.Urls {
+						fmt.Printf("document: %s, number of occurances in document: %d\n", k, v)
+					}
+					continue
+				}
+
+				if found {
+					fmt.Printf("Found data for key %x.\nPrinting as string: %s\n", *lookup.Key, data)
+				} else {
+					fmt.Printf("Could not find data for key %x\n", *lookup.Key)
+				}
 			}
+		case request.Store != nil:
+			storeReq := request.Store
+			kClosest := g.LookupNodes(*storeReq.Key)
+			if len(kClosest) == 0 {
+				fmt.Printf("Could not perform store since no neighbours found.\n")
+				continue
+			}
+			closest := kClosest[0]
+			err := g.sendStore(closest, *storeReq.Key, storeReq.Value, storeReq.Type)
+			if err != nil {
+				fmt.Printf("Failed to store key %s.\n", *storeReq.Key)
+			}
+		default:
+			fmt.Printf("Unknown dht client message\n")
 		}
 	}
 }
