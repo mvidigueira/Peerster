@@ -254,7 +254,7 @@ func (g *Gossiper) clientDHTListenRoutine(cCliDHT chan *dto.DHTRequest) {
 				// Seperate printing function for lookups containing KeywordToURLMap structs
 				newKeywordToUrlMap := &dht.KeywordToURLMap{}
 				err := protobuf.Decode(data, newKeywordToUrlMap)
-				if err == nil {
+				if err == nil && found {
 					fmt.Printf("Keyword: %s\n", newKeywordToUrlMap.Keyword)
 					for k, v := range newKeywordToUrlMap.Urls {
 						fmt.Printf("document: %s, number of occurances in document: %d\n", k, v)
