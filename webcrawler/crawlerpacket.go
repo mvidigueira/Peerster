@@ -24,10 +24,3 @@ type PageHashPackage struct {
 	Hash dht.TypeID
 	Type string
 }
-
-type PagePacket struct {
-	Keywords []string
-	PageHash []byte
-	Links    []string
-	Url      string
-}

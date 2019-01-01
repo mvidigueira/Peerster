@@ -18,7 +18,7 @@ func (g *Gossiper) webCrawlerListenerRoutine() {
 		case packet.HyperlinkPackage != nil:
 			g.distributeHyperlinks(packet.HyperlinkPackage)
 		case packet.IndexPackage != nil:
-			g.indexKeywordsInDHT(packet.IndexPackage)
+			g.saveKeywordsInDHT(packet.IndexPackage)
 		case packet.PageHash != nil && packet.PageHash.Type == "store":
 			g.savePageHashInDHT(packet.PageHash)
 		case packet.PageHash != nil && packet.PageHash.Type == "lookup":
@@ -31,7 +31,7 @@ func (g *Gossiper) webCrawlerListenerRoutine() {
 // The maximum safe size of a UDP packet is 8192 but it could happen that some pages contains a set of urls
 // which is larger than 8192 bytes and hence we need to break down the url packages into batches which are smaller than 8192bytes.
 func (g *Gossiper) createUDPBatches(owner *dht.NodeState, items []interface{}) []interface{} {
-	udpMaxSize := 7500 // Maximum safe UDP size.
+	udpMaxSize := 7500
 	packet := make([]interface{}, 0, udpMaxSize)
 	packetSize := 0
 	batches := make([]interface{}, 0, 1)
@@ -109,13 +109,12 @@ func (g *Gossiper) batchSendKeywords(owner *dht.NodeState, items []*dht.KeywordT
 // to the local webcrawler. If the hyperlinks belong to another webcrawlers domain, then they will be sent to the corresponding node.
 func (g *Gossiper) distributeHyperlinks(hyperlinkPackage *webcrawler.HyperlinkPackage) {
 	links := hyperlinkPackage.Links
-	domains := map[*dht.NodeState][]string{}
+	domains := map[dht.NodeState][]string{}
 	for _, hyperlink := range links {
 		hash := dht.GenerateKeyHash(hyperlink)
 		closestNodes := g.LookupNodes(hash)
 		if len(closestNodes) == 0 {
 			fmt.Println("LookupNodes returned an empty list... Retrying in 5 seconds.")
-
 			// Retry in 5 seconds.
 			go func() {
 				time.Sleep(time.Second * 5)
@@ -123,13 +122,13 @@ func (g *Gossiper) distributeHyperlinks(hyperlinkPackage *webcrawler.HyperlinkPa
 			}()
 			break
 		}
-		responsibleNode := closestNodes[0]
-		hyperlinks, found := domains[responsibleNode]
+		owner := closestNodes[0]
+		hyperlinks, found := domains[*owner]
 		if !found {
-			domains[responsibleNode] = []string{hyperlink}
+			domains[*owner] = []string{hyperlink}
 		} else {
 			hyperlinks = append(hyperlinks, hyperlink)
-			domains[responsibleNode] = hyperlinks
+			domains[*owner] = hyperlinks
 		}
 	}
 
@@ -143,18 +142,16 @@ func (g *Gossiper) distributeHyperlinks(hyperlinkPackage *webcrawler.HyperlinkPa
 			}
 		} else {
 			// url belong to another crawlers domain.
-			g.batchSendURLS(owner, hyperlinks)
+			g.batchSendURLS(&owner, hyperlinks)
 		}
 	}
 }
 
 // Save each keyword of a url at the responsible node
-func (g *Gossiper) indexKeywordsInDHT(indexPackage *webcrawler.IndexPackage) {
+func (g *Gossiper) saveKeywordsInDHT(indexPackage *webcrawler.IndexPackage) {
 	frequencies, url := indexPackage.KeywordFrequencies, indexPackage.Url
-	batches := map[string][]*dht.KeywordToURLMap{}
-	addressToNodeState := map[string]*dht.NodeState{}
+	destinations := map[dht.NodeState][]*dht.KeywordToURLMap{}
 	for k, v := range frequencies {
-
 		keyHash := dht.GenerateKeyHash(k)
 		kClosest := g.LookupNodes(keyHash)
 		if len(kClosest) == 0 {
@@ -162,27 +159,33 @@ func (g *Gossiper) indexKeywordsInDHT(indexPackage *webcrawler.IndexPackage) {
 			break
 		}
 		closest := kClosest[0]
-
-		addressToNodeState[closest.Address] = closest
-
 		urlToKeywordMap := &dht.KeywordToURLMap{
 			KeywordHash: keyHash,
 			Urls:        map[string]int{url: v},
 		}
-
-		val, found := batches[closest.Address]
+		val, found := destinations[*closest]
 		if !found {
-			batches[closest.Address] = []*dht.KeywordToURLMap{
+			destinations[*closest] = []*dht.KeywordToURLMap{
 				urlToKeywordMap,
 			}
 		} else {
-			batches[closest.Address] = append(val, urlToKeywordMap)
+			destinations[*closest] = append(val, urlToKeywordMap)
 		}
 	}
 
-	for k, batch := range batches {
-		addr, _ := addressToNodeState[k]
-		g.batchSendKeywords(addr, batch)
+	for dest, batch := range destinations {
+		if dest.Address == g.address {
+			// This node is the destination
+			packetBytes, err := protobuf.Encode(&dht.KeywordToURLBatchStruct{List: batch})
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			msg := g.newDHTStore(dest.NodeID, packetBytes, "PUT")
+			g.replyStore(msg)
+			continue
+		}
+		g.batchSendKeywords(&dest, batch)
 
 	}
 }

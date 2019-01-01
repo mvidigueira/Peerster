@@ -1,7 +1,6 @@
 package webcrawler
 
 import (
-	"encoding/binary"
 	"fmt"
 	"hash"
 	"hash/fnv"
@@ -316,14 +315,14 @@ func (wc *Crawler) keywordFrequency(keywords []string) map[string]int {
 }
 
 // creates a 20 byte long hash
-func (wc *Crawler) fastHash(id string) dht.TypeID {
+/*func (wc *Crawler) fastHash(id string) dht.TypeID {
 	wc.hasher.Reset()
 	wc.hasher.Write([]byte(id))
 	hash := wc.hasher.Sum64()
 	var b [dht.IDByteSize]byte
 	binary.LittleEndian.PutUint64(b[:], hash)
 	return b
-}
+}*/
 
 // Removes first element from crawler queue
 func (wc *Crawler) popQueue() string {
