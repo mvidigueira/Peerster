@@ -14,9 +14,10 @@ func main() {
 	budget := flag.Int64("budget", 0, "budget to be used for a search")
 	node := flag.String("lookupNode", "", "request a dht node lookup")
 	key := flag.String("lookupKey", "", "request a dht key lookup")
+	store := flag.String("store", "", "key value pair of the form key:value to be stored in the dht. Value can either be a value or a url to a resource on the local file system.")
 
 	flag.Parse()
 
-	client := NewClient(*UIPort, *dest, *fileName, *msg, *request, *keywords, uint64(*budget), *node, *key)
+	client := NewClient(*UIPort, *dest, *fileName, *msg, *request, *keywords, uint64(*budget), *node, *key, *store)
 	client.sendUDP()
 }

@@ -851,6 +851,17 @@ type DHTLookup struct {
 	Key  *dht.TypeID
 }
 
+type DHTStore struct {
+	Key   *dht.TypeID
+	Type  string
+	Value []byte
+}
+
+type DHTRequest struct {
+	Store  *DHTStore
+	Lookup *DHTLookup
+}
+
 //ClientRequest - protocol structure to be serialized and sent from client to gossiper
 type ClientRequest struct {
 	Packet       *GossipPacket
@@ -858,6 +869,7 @@ type ClientRequest struct {
 	FileDownload *FileToDownload
 	FileSearch   *FileToSearch
 	DHTLookup    *DHTLookup
+	DHTStore     *DHTStore
 }
 
 //GetUnderlyingType - returns the underlying type of the client request, or the empty string in case of no subtype
@@ -874,6 +886,8 @@ func (cr *ClientRequest) GetUnderlyingType() (subtype string) {
 		subtype = "nodeSearch"
 	} else if cr.DHTLookup != nil && cr.DHTLookup.Key != nil {
 		subtype = "keySearch"
+	} else if cr.DHTStore != nil {
+		subtype = "store"
 	} else {
 		fmt.Printf("%v", cr)
 		subtype = ""

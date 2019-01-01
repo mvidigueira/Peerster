@@ -3,8 +3,10 @@ package main
 import (
 	"encoding/hex"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
+	"os"
 	"protobuf"
 	"strings"
 
@@ -35,10 +37,11 @@ type Client struct {
 	budget          uint64
 	lookupKey       string
 	lookupNode      string
+	store           string
 }
 
 //NewClient - for the creation of single use clients
-func NewClient(UIport, dest string, file string, msg string, request string, keywords string, budget uint64, lookupNode, lookupKey string) *Client {
+func NewClient(UIport, dest string, file string, msg string, request string, keywords string, budget uint64, lookupNode, lookupKey, store string) *Client {
 	addr, err := net.ResolveUDPAddr("udp4", "localhost:"+clientPort)
 	addrGossiper, err := net.ResolveUDPAddr("udp4", "localhost:"+UIport)
 	logError(err)
@@ -57,13 +60,45 @@ func NewClient(UIport, dest string, file string, msg string, request string, key
 		budget:          budget,
 		lookupNode:      lookupNode,
 		lookupKey:       lookupKey,
+		store:           store,
 	}
 
 }
 
 func (c *Client) sendUDP() {
 	var request *dto.ClientRequest
-	if c.lookupNode != "" {
+	if c.store != "" {
+		tmp := strings.Split(c.store, ":")
+		key, value := tmp[0], tmp[1]
+		key = dht.GenerateKeyHash(key)
+		idB, err := hex.DecodeString(key)
+		if err != nil {
+			fmt.Print(err)
+			return
+		}
+		id, ok := dht.ConvertToTypeID(idB)
+		if !ok {
+			fmt.Print(err)
+			return
+		}
+		storeValue := c.getByteValueForStore(value)
+		store := &dto.DHTStore{Key: &id, Value: storeValue, Type: "POST"}
+
+		/*
+			DEBUG CODE FOR KeywordToUrl stores (PUT)
+			storeValue := &dht.KeywordToURLMap{
+				Keyword: "keyword1",
+				Urls:    map[string]int{"www.google.se": 1, "www.apple.com": 1},
+			}
+			packetBytes, err := protobuf.Encode(storeValue)
+			if err != nil {
+				fmt.Println("ERROR encode")
+			}
+			store := &dto.DHTStore{Key: &id, Value: packetBytes, Type: "PUT"}
+		*/
+
+		request = &dto.ClientRequest{DHTStore: store}
+	} else if c.lookupNode != "" {
 		idB, err := hex.DecodeString(c.lookupNode)
 		if err != nil {
 			fmt.Print(err)
@@ -77,7 +112,8 @@ func (c *Client) sendUDP() {
 		lookup := &dto.DHTLookup{Node: &id}
 		request = &dto.ClientRequest{DHTLookup: lookup}
 	} else if c.lookupKey != "" {
-		idB, err := hex.DecodeString(c.lookupKey)
+		key := dht.GenerateKeyHash(c.lookupKey)
+		idB, err := hex.DecodeString(key)
 		if err != nil {
 			fmt.Print(err)
 			return
@@ -122,4 +158,21 @@ func (c *Client) sendUDP() {
 
 func (c *Client) close() {
 	c.conn.Close()
+}
+
+// If value is a file url then return the file which the url points to, otherwise return value as a byte array
+func (c *Client) getByteValueForStore(value string) []byte {
+	// Check if value is a filepath url
+	var storeValue []byte
+	if _, err := os.Stat(value); !os.IsNotExist(err) {
+		// value is a pointer to a file
+		data, err := ioutil.ReadFile(value)
+		if err != nil {
+			fmt.Printf("Error reading file in store request.\n")
+		}
+		storeValue = data
+	} else {
+		storeValue = []byte(value)
+	}
+	return storeValue
 }
