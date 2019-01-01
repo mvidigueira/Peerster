@@ -227,12 +227,11 @@ func makeSelectCasesValue(chans []chan *dht.Message, timeoutSec int) (cases []re
 	return
 }
 
-/*
-// Store - stores 'data' with key 'key' in the DHT
-func (g *Gossiper) Store(key dht.TypeID, data []byte) {
+// StoreInDHT - stores 'data' with key 'key' and type 'storeType' in the DHT
+func (g *Gossiper) StoreInDHT(key dht.TypeID, data []byte, storeType string) {
 	closest := g.LookupNodes(key)
 	for _, node := range closest {
-		g.sendStore(node, key, data)
+		g.sendStore(node, key, data, storeType)
+		break //for now only does the first node
 	}
 }
-*/

@@ -270,16 +270,7 @@ func (g *Gossiper) clientDHTListenRoutine(cCliDHT chan *dto.DHTRequest) {
 			}
 		case request.Store != nil:
 			storeReq := request.Store
-			kClosest := g.LookupNodes(*storeReq.Key)
-			if len(kClosest) == 0 {
-				fmt.Printf("Could not perform store since no neighbours found.\n")
-				continue
-			}
-			closest := kClosest[0]
-			err := g.sendStore(closest, *storeReq.Key, storeReq.Value, storeReq.Type)
-			if err != nil {
-				fmt.Printf("Failed to store key %s.\n", *storeReq.Key)
-			}
+			g.StoreInDHT(*storeReq.Key, storeReq.Value, storeReq.Type)
 		default:
 			fmt.Printf("Unknown dht client message\n")
 		}
