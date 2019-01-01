@@ -64,8 +64,8 @@ func (bt *bucketTable) alphaClosest(target dht.TypeID, alpha int) (results []*dh
 				results = append(results, node)
 			} else {
 				results = dht.InsertOrdered(target, results, node)
-				if len(results) > bucketSize {
-					results = results[:bucketSize]
+				if len(results) > alpha {
+					results = results[:alpha]
 				}
 			}
 		}

@@ -15,7 +15,13 @@ func (g *Gossiper) LookupNodes(id dht.TypeID) (closest []*dht.NodeState) {
 	results := g.bucketTable.alphaClosest(id, 3)
 	snsa.InsertArray(results, g.dhtMyID)
 
-	return g.lookupRound(snsa)
+	closest = g.lookupRound(snsa)
+	myNode := &dht.NodeState{NodeID: g.dhtMyID, Address: g.address}
+	closest = dht.InsertOrdered(id, closest, myNode)
+	if len(closest) > bucketSize {
+		closest = closest[:bucketSize]
+	}
+	return
 }
 
 func (g *Gossiper) lookupFinalPhase(snsa *dht.SafeNodeStateArray) (closest []*dht.NodeState) {
@@ -107,12 +113,14 @@ func makeSelectCases(chans []chan []*dht.NodeState, timeoutSec int) (cases []ref
 	return
 }
 
-//WIP from here on
-
 // LookupValue looks for the closest nodes to a specific id (up to k nodes).
 // This id can represent a nodeID or a key hash.
 // Unlike LookupValue, it does not stop early if it encounters a node with the key stored.
 func (g *Gossiper) LookupValue(id dht.TypeID) (data []byte, found bool) {
+	if data, found = g.storage.Retrieve(id); found {
+		return
+	}
+
 	snsa := dht.NewSafeNodeStateArray(id)
 	results := g.bucketTable.alphaClosest(id, 3)
 	snsa.InsertArray(results, g.dhtMyID)
@@ -220,43 +228,11 @@ func makeSelectCasesValue(chans []chan *dht.Message, timeoutSec int) (cases []re
 }
 
 /*
-// LookupValue - stops early if it encounters a node with the key stored.
-func (g *Gossiper) LookupValue(key dht.TypeID) (data []byte, found bool) {
-	if data, found = g.storage.Retrieve(key); found {
-		return
+// Store - stores 'data' with key 'key' in the DHT
+func (g *Gossiper) Store(key dht.TypeID, data []byte) {
+	closest := g.LookupNodes(key)
+	for _, node := range closest {
+		g.sendStore(node, key, data)
 	}
-
-	snsa := dht.NewSafeNodeStateArray(key)
-	results := g.bucketTable.alphaClosest(key, 1)
-	node := results[0]
-	snsa.Insert(node)
-
-	return g.lookupValueAux(key, snsa)
-}
-
-// lookupNodesAux - simple version that assumes that nodes don't crash
-func (g *Gossiper) lookupValueAux(key dht.TypeID, snsa *dht.SafeNodeStateArray) (data []byte, found bool) {
-	results := snsa.GetAlphaUnqueried(1)
-	node := results[0]
-
-	c := g.sendLookupNode(node, key)
-	snsa.SetQueried(node)
-
-	msg := <-c
-	closer := false
-
-	if msg.ValueReply.NodeStates == nil {
-		return msg.ValueReply.Data, true
-	}
-
-	for _, node := range msg.ValueReply.NodeStates {
-		closer = closer || snsa.Insert(node)
-	}
-
-	if closer {
-		return g.lookupValueAux(key, snsa)
-	}
-
-	return nil, false
 }
 */
