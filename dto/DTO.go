@@ -211,17 +211,19 @@ func (t *TxPublish) Hash() (out [32]byte) {
 
 //GossipPacket - protocol structure to be serialized and sent between peers
 type GossipPacket struct {
-	Simple        *SimpleMessage
-	Rumor         *RumorMessage
-	Status        *StatusPacket
-	Private       *PrivateMessage
-	DataRequest   *DataRequest
-	DataReply     *DataReply
-	SearchRequest *SearchRequest
-	SearchReply   *SearchReply
-	TxPublish     *TxPublish
-	BlockPublish  *BlockPublish
-	DHTMessage    *dht.Message
+	Simple           *SimpleMessage
+	Rumor            *RumorMessage
+	Status           *StatusPacket
+	Private          *PrivateMessage
+	DataRequest      *DataRequest
+	DataReply        *DataReply
+	SearchRequest    *SearchRequest
+	SearchReply      *SearchReply
+	TxPublish        *TxPublish
+	BlockPublish     *BlockPublish
+	DHTMessage       *dht.Message
+	DiffieHellman    *DiffieHellman
+	EncryptedMessage *EncryptedPrivateMessage
 }
 
 //GetUnderlyingType - returns the underlying type of the gossip packet, or the empty string in case of no subtype
@@ -248,6 +250,11 @@ func (g *GossipPacket) GetUnderlyingType() (subtype string) {
 		subtype = "blockpublish"
 	} else if g.DHTMessage != nil {
 		subtype = "dhtmessage"
+	} else if g.DiffieHellman != nil {
+		subtype = "diffiehellman"
+	} else if g.EncryptedMessage != nil {
+		subtype = "encryptedmessage"
+
 	} else {
 		subtype = ""
 	}
@@ -276,6 +283,8 @@ func (g *GossipPacket) GetOrigin() (origin string) {
 		LogError(err)
 	case "private":
 		origin = g.Private.Origin
+	case "encryptedmessage":
+		origin = g.EncryptedMessage.Origin
 	case "datarequest":
 		origin = g.DataRequest.Origin
 	case "datareply":
@@ -313,6 +322,8 @@ func (g *GossipPacket) GetSeqID() (id uint32) {
 		LogError(err)
 	case "private":
 		id = g.Private.ID
+	case "encryptedmessage":
+		id = g.EncryptedMessage.ID
 	case "datarequest":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract ID from a DATA REQUEST message"}
 		LogError(err)
@@ -353,6 +364,8 @@ func (g *GossipPacket) GetContents() (contents string) {
 		LogError(err)
 	case "private":
 		contents = g.Private.Text
+	case "encryptedmessage":
+		contents = string(g.EncryptedMessage.CipherText)
 	case "datarequest":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract contents from a DATA REQUEST message"}
 		LogError(err)
@@ -395,6 +408,8 @@ func (g *GossipPacket) GetHopLimit() (limit uint32) {
 		LogError(err)
 	case "private":
 		limit = g.Private.HopLimit
+	case "encryptedmessage":
+		limit = g.EncryptedMessage.HopLimit
 	case "datarequest":
 		limit = g.DataRequest.HopLimit
 	case "datareply":
@@ -432,6 +447,8 @@ func (g *GossipPacket) GetDestination() (dest string) {
 		LogError(err)
 	case "private":
 		dest = g.Private.Destination
+	case "encryptedmessage":
+		dest = g.EncryptedMessage.Destination
 	case "datarequest":
 		dest = g.DataRequest.Destination
 	case "datareply":
@@ -877,4 +894,31 @@ func SendGossipPacket(packet *GossipPacket, addr string, conn *net.UDPConn) {
 	packetBytes, err := protobuf.Encode(packet)
 	LogError(err)
 	conn.WriteToUDP(packetBytes, udpAddr)
+}
+
+// DiffieHellman package
+
+type DiffieHellman struct {
+	Origin      string
+	Destination string
+	HopLimit    uint32
+	P           string //*big.Int
+	G           string //*big.Int
+	PublicKey   []byte
+	Sign        []byte
+}
+
+//PrivateMessage - subtype of GossipPacket used for encrypted private messages between peers
+type EncryptedPrivateMessage struct {
+	Origin      string
+	ID          uint32
+	CipherText  []byte
+	Destination string
+	HopLimit    uint32
+}
+
+//DecrementHopCount - decrements hop count of DataReply by 1
+func (epm *EncryptedPrivateMessage) DecrementHopCount() (shouldSend bool) {
+	epm.HopLimit--
+	return (epm.HopLimit > 0)
 }

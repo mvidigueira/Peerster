@@ -97,7 +97,6 @@ func (g *Gossiper) clientPMListenRoutine(cUIPM chan *dto.PacketAddressPair) {
 func (g *Gossiper) privateMessageListenRoutine(cPrivate chan *dto.PacketAddressPair) {
 	for pap := range cPrivate {
 		g.addToPeers(pap.GetSenderAddress())
-
 		if pap.GetDestination() == g.name {
 			printGossiperMessage(pap)
 			g.printKnownPeers()

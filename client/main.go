@@ -12,9 +12,10 @@ func main() {
 	request := flag.String("request", "", "request a chunk or metafile of this hash")
 	keywords := flag.String("keywords", "", "keywords to be used for a search")
 	budget := flag.Int64("budget", 0, "budget to be used for a search")
+	diffieHellman := flag.Bool("diffie", false, "Negotiate a diffieHellman")
 
 	flag.Parse()
 
-	client := NewClient(*UIPort, *dest, *fileName, *msg, *request, *keywords, uint64(*budget))
+	client := NewClient(*UIPort, *dest, *fileName, *msg, *request, *keywords, uint64(*budget), *diffieHellman)
 	client.sendUDP()
 }

@@ -1,13 +1,17 @@
 package gossiper
 
 import (
+	"fmt"
 	"log"
+	"math/big"
 	"math/rand"
 	"net"
 	"protobuf"
 	"strconv"
 	"time"
 
+	"github.com/mvidigueira/Diffie-Hellman/aesencryptor"
+	"github.com/mvidigueira/Diffie-Hellman/diffiehellman"
 	"github.com/mvidigueira/Peerster/dht"
 	"github.com/mvidigueira/Peerster/dto"
 	"github.com/mvidigueira/Peerster/fileparsing"
@@ -56,6 +60,10 @@ type Gossiper struct {
 	dhtChanMap  *dht.ChanMap
 	bucketTable *bucketTable
 	storage     *dht.StorageMap
+
+	privateKey           [dht.IDByteSize]byte
+	diffieHellmanMap     map[string](chan *dto.DiffieHellman)
+	activeDiffieHellmans map[string]([]byte)
 }
 
 //NewGossiper creates a new gossiper
@@ -104,6 +112,9 @@ func NewGossiper(address, name string, UIport string, peers []string, simple boo
 		dhtMyID:    dht.InitialRandNodeID(),
 		dhtChanMap: dht.NewChanMap(),
 		storage:    dht.NewStorageMap(),
+
+		diffieHellmanMap:     map[string](chan *dto.DiffieHellman){},
+		activeDiffieHellmans: map[string]([]byte){},
 	}
 	g.bucketTable = newBucketTable(g.dhtMyID, g)
 	return g
@@ -133,9 +144,15 @@ func (g *Gossiper) Start() {
 
 	cFileNaming := make(chan *dto.PacketAddressPair) //blockchain
 	cBlocks := make(chan *dto.PacketAddressPair)     //blockchain
-	go g.blockchainMiningRoutine(cFileNaming, cBlocks)
+	//go g.blockchainMiningRoutine(cFileNaming, cBlocks)
 
-	go g.receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, cDataReply, cSearcRequest, cSearchReply, cFileNaming, cBlocks)
+	cDiffieHellman := make(chan *dto.PacketAddressPair)
+	go g.diffieListenRoutine(cDiffieHellman)
+
+	cEncryptedMessage := make(chan *dto.PacketAddressPair)
+	go g.encryptedPrivateMessageListenRoutine(cEncryptedMessage)
+
+	go g.receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, cDataReply, cSearcRequest, cSearchReply, cFileNaming, cBlocks, cDiffieHellman, cEncryptedMessage)
 	go g.antiEntropy()
 
 	go g.periodicRouteRumor() //DSDV
@@ -153,7 +170,13 @@ func (g *Gossiper) Start() {
 	cFileSearch := make(chan *dto.FileToSearch)
 	go g.clientFileSearchListenRoutine(cFileSearch)
 
-	g.receiveClientUDP(cUI, cUIPM, cFileShare, cFileDL, cFileSearch)
+	cEncryptedPrivate := make(chan *dto.PacketAddressPair)
+	go g.clientEPMListenRoutine(cEncryptedPrivate)
+
+	clientDiffieHellman := make(chan *dto.PacketAddressPair)
+	go g.clientDiffieListenRoutine(clientDiffieHellman)
+
+	g.receiveClientUDP(cUI, cUIPM, cFileShare, cFileDL, cFileSearch, clientDiffieHellman, cEncryptedPrivate)
 }
 
 //addToPeers - adds a peer (ip:port) to the list of known peers
@@ -192,7 +215,7 @@ func (g *Gossiper) sendStatusPacket(peerAddress string) {
 
 //receiveClientUDP - receives gossip packets from CLIENTS and forwards them to the provided channel,
 //setting the origin in the process
-func (g *Gossiper) receiveClientUDP(cRumoring, cPMing chan *dto.PacketAddressPair, cFileShare chan string, cFileDL chan *dto.FileToDownload, cFileSearch chan *dto.FileToSearch) {
+func (g *Gossiper) receiveClientUDP(cRumoring, cPMing chan *dto.PacketAddressPair, cFileShare chan string, cFileDL chan *dto.FileToDownload, cFileSearch chan *dto.FileToSearch, cDiffie, cEncryptedPrivate chan *dto.PacketAddressPair) {
 	for {
 		request := &dto.ClientRequest{}
 		packetBytes := make([]byte, packetSize)
@@ -204,6 +227,7 @@ func (g *Gossiper) receiveClientUDP(cRumoring, cPMing chan *dto.PacketAddressPai
 			log.Println(err)
 			continue
 		}
+		fmt.Println("NEW MSG")
 		err = protobuf.Decode(packetBytes, request)
 		switch request.GetUnderlyingType() {
 		case "simple":
@@ -232,6 +256,15 @@ func (g *Gossiper) receiveClientUDP(cRumoring, cPMing chan *dto.PacketAddressPai
 			cFileDL <- request.FileDownload
 		case "fileSearch":
 			cFileSearch <- request.FileSearch
+		case "diffiehellman":
+			packet := request.Packet
+			packet.DiffieHellman.Origin = g.name
+			cDiffie <- &dto.PacketAddressPair{Packet: packet}
+		case "encryptedmessage":
+			fmt.Println("NEW ENC")
+			packet := request.Packet
+			packet.EncryptedMessage.Origin = g.name
+			cEncryptedPrivate <- &dto.PacketAddressPair{Packet: packet}
 		default:
 			log.Println("Unrecognized message type. Ignoring...")
 		}
@@ -240,7 +273,7 @@ func (g *Gossiper) receiveClientUDP(cRumoring, cPMing chan *dto.PacketAddressPai
 
 //receiveExternalUDP - receives gossip packets from PEERS and forwards them to the appropriate channel
 //among those provided, depending on whether they are rumor, simple or status packets
-func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, cDataReply, cSearcRequest, cSearchReply, cFileNaming, cBlocks chan *dto.PacketAddressPair) {
+func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, cDataReply, cSearcRequest, cSearchReply, cFileNaming, cBlocks, cDiffieHellman, cEncypted chan *dto.PacketAddressPair) {
 	for {
 		packet := &dto.GossipPacket{}
 		packetBytes := make([]byte, packetSize)
@@ -316,6 +349,18 @@ func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, c
 				log.Println("Running on 'simple' mode. Ignoring blockpublish message from " + senderAddress + "...")
 			} else {
 				cBlocks <- pap
+			}
+		case "diffiehellman":
+			if g.UseSimple {
+				log.Println("Running on 'simple' mode. Ignoring diffiehellman message from " + senderAddress + "...")
+			} else {
+				cDiffieHellman <- pap
+			}
+		case "encryptedmessage":
+			if g.UseSimple {
+				log.Println("Running on 'simple' mode. Ignoring encrypted message from " + senderAddress + "...")
+			} else {
+				cEncypted <- pap
 			}
 		default:
 			log.Println("Unrecognized message type. Ignoring message from " + senderAddress + "...")
@@ -403,5 +448,161 @@ func (g *Gossiper) rumorListenRoutine(cRumor chan *dto.PacketAddressPair) {
 		} else {
 			g.sendAllPeers(packet, pap.GetSenderAddress())
 		}
+	}
+}
+
+//diffieHellman
+
+func (g *Gossiper) diffieListenRoutine(cDiffieHellman chan *dto.PacketAddressPair) {
+	for pap := range cDiffieHellman {
+		g.addToPeers(pap.GetSenderAddress())
+		d, f := g.diffieHellmanMap[pap.GetSenderAddress()]
+		if !f {
+			// New diffie hellman request
+			responseChannel := make(chan *dto.DiffieHellman)
+			g.diffieHellmanMap[pap.GetSenderAddress()] = responseChannel
+			// Start diffiehellman process
+			go g.negotiateDiffieHellman(responseChannel, pap.GetSenderAddress(), pap.Packet.DiffieHellman)
+		} else {
+			d <- pap.Packet.DiffieHellman
+		}
+	}
+}
+
+func (g *Gossiper) clientDiffieListenRoutine(cDiffieHellman chan *dto.PacketAddressPair) {
+	for pap := range cDiffieHellman {
+		g.addToPeers(pap.GetSenderAddress())
+		_, f := g.activeDiffieHellmans[pap.GetSenderAddress()]
+		if f {
+			fmt.Println("You already share a key with this peer")
+			continue
+		}
+
+		_, f = g.diffieHellmanMap[pap.GetSenderAddress()]
+		if f {
+			fmt.Println("DiffieHellman negotation already active")
+			continue
+		}
+
+		// New diffie hellman request
+		responseChannel := make(chan *dto.DiffieHellman)
+		g.diffieHellmanMap[pap.Packet.DiffieHellman.Destination] = responseChannel
+		// Start diffiehellman process
+		go g.negotiateDiffieHellmanInitiator(responseChannel, pap.Packet.DiffieHellman)
+
+	}
+}
+
+func (g *Gossiper) negotiateDiffieHellmanInitiator(ch chan *dto.DiffieHellman, packet *dto.DiffieHellman) {
+	diffieHellman := diffiehellman.New(diffiehellman.Group(), diffiehellman.P())
+	publicKey := diffieHellman.GeneratePublicKey()
+
+	// TODO Sign package with my private key.
+
+	g.sendUDP(&dto.GossipPacket{
+		DiffieHellman: &dto.DiffieHellman{
+			Origin:      g.name,
+			Destination: packet.Destination,
+			HopLimit:    10,
+			P:           fmt.Sprintf("%x", diffiehellman.P()),
+			G:           fmt.Sprintf("%x", diffiehellman.Group()),
+			PublicKey:   publicKey,
+		},
+	}, packet.Destination)
+
+	reply := <-ch
+
+	symmetricKey := diffieHellman.GenerateSymmetricKey(reply.PublicKey)
+
+	g.activeDiffieHellmans[packet.Destination] = symmetricKey
+
+	delete(g.diffieHellmanMap, packet.Destination)
+
+	// Send ack
+
+	g.sendUDP(&dto.GossipPacket{
+		DiffieHellman: &dto.DiffieHellman{},
+	}, packet.Destination)
+
+	fmt.Println(symmetricKey)
+
+	fmt.Printf("Key setup with %s\n", packet.Destination)
+}
+
+func (g *Gossiper) negotiateDiffieHellman(ch chan *dto.DiffieHellman, saddr string, packet *dto.DiffieHellman) {
+	group, _ := new(big.Int).SetString(packet.G, 16)
+	p, _ := new(big.Int).SetString(packet.P, 16)
+	diffieHellman := diffiehellman.New(group, p)
+	publicKey := diffieHellman.GeneratePublicKey()
+	symmetricKey := diffieHellman.GenerateSymmetricKey(packet.PublicKey)
+
+	// 1. Send your public key to the initiator
+
+	g.sendUDP(&dto.GossipPacket{
+		DiffieHellman: &dto.DiffieHellman{
+			Origin:      g.name,
+			Destination: saddr,
+			HopLimit:    10,
+			P:           packet.P,
+			G:           packet.G,
+			PublicKey:   publicKey,
+		},
+	}, saddr)
+
+	// 2. Wait for reply
+
+	<-ch
+
+	delete(g.diffieHellmanMap, saddr)
+
+	g.activeDiffieHellmans[saddr] = symmetricKey
+
+	fmt.Println(symmetricKey)
+
+	fmt.Printf("Key setup with %s\n", saddr)
+
+}
+
+func (g *Gossiper) clientEPMListenRoutine(ch chan *dto.PacketAddressPair) {
+	for pap := range ch {
+		eMsg := pap.Packet.EncryptedMessage
+		dest := eMsg.Destination
+		d, f := g.activeDiffieHellmans[dest]
+		if !f {
+			fmt.Printf("No active diffie hellman session with %s\n", d)
+		}
+
+		pap.Packet.EncryptedMessage.ID = 0
+		pap.Packet.EncryptedMessage.HopLimit = defaultHopLimit
+		pap.Packet.EncryptedMessage.Origin = g.name
+
+		aesEncrypter := aesencryptor.New(d)
+		eMsg.CipherText = aesEncrypter.Encrypt(eMsg.CipherText)
+		fmt.Println(eMsg.CipherText)
+		pap.Packet.EncryptedMessage = eMsg
+		g.sendUDP(pap.Packet, dest)
+		/*if pap.Packet.EncryptedMessage.HopLimit > 0 {
+			fmt.Println("HOP OK")
+			nextHop, ok := g.getNextHop(pap.GetDestination())
+			fmt.Println(g.getNextHop(pap.GetDestination()))
+			if ok {
+				fmt.Println("SENDING EPM")
+				g.sendUDP(pap.Packet, nextHop)
+			}
+		}*/
+	}
+}
+
+func (g *Gossiper) encryptedPrivateMessageListenRoutine(cEncryptedPrivate chan *dto.PacketAddressPair) {
+	for pap := range cEncryptedPrivate {
+		eMsg := pap.Packet.EncryptedMessage
+		d, f := g.activeDiffieHellmans[pap.GetSenderAddress()]
+		if !f {
+			fmt.Printf("No active diffie hellman session with %s\n", d)
+		}
+		fmt.Printf("Cipher: %s\n", eMsg.CipherText)
+		aesEncrypter := aesencryptor.New(d)
+		eMsg.CipherText = aesEncrypter.Decrypt(eMsg.CipherText)
+		fmt.Println(string(eMsg.CipherText))
 	}
 }

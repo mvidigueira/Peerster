@@ -30,10 +30,11 @@ type Client struct {
 	request         string
 	keywords        string
 	budget          uint64
+	diffieHellman   bool
 }
 
 //NewClient - for the creation of single use clients
-func NewClient(UIport, dest string, file string, msg string, request string, keywords string, budget uint64) *Client {
+func NewClient(UIport, dest string, file string, msg string, request string, keywords string, budget uint64, diffieHellman bool) *Client {
 	addr, err := net.ResolveUDPAddr("udp4", "localhost:"+clientPort)
 	addrGossiper, err := net.ResolveUDPAddr("udp4", "localhost:"+UIport)
 	logError(err)
@@ -50,6 +51,7 @@ func NewClient(UIport, dest string, file string, msg string, request string, key
 		request:         request,
 		keywords:        keywords,
 		budget:          budget,
+		diffieHellman:   diffieHellman,
 	}
 }
 
@@ -73,6 +75,21 @@ func (c *Client) sendUDP() {
 	} else if c.file != "" {
 		file2s := &dto.FileToShare{FileName: c.file}
 		request = &dto.ClientRequest{FileShare: file2s}
+	} else if c.dest != "" && c.diffieHellman && c.msg != "" {
+		encryptedMessage := &dto.EncryptedPrivateMessage{
+			Destination: c.dest,
+			CipherText:  []byte(c.msg),
+			HopLimit:    10,
+		}
+		packet := &dto.GossipPacket{EncryptedMessage: encryptedMessage}
+		request = &dto.ClientRequest{Packet: packet}
+	} else if c.dest != "" && c.diffieHellman {
+		diffieRequest := &dto.DiffieHellman{
+			Destination: c.dest,
+			HopLimit:    10,
+		}
+		packet := &dto.GossipPacket{DiffieHellman: diffieRequest}
+		request = &dto.ClientRequest{Packet: packet}
 	} else if c.dest != "" {
 		msg := &dto.PrivateMessage{Text: c.msg, Destination: c.dest}
 		packet := &dto.GossipPacket{Private: msg}
