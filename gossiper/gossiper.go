@@ -14,6 +14,7 @@ import (
 	"github.com/mvidigueira/Peerster/fileparsing"
 	"github.com/mvidigueira/Peerster/filesearching"
 	"github.com/mvidigueira/Peerster/routing"
+	"github.com/mvidigueira/Peerster/webcrawler"
 )
 
 var packetSize = 10000
@@ -58,10 +59,11 @@ type Gossiper struct {
 	bucketTable  *bucketTable
 	storage      *dht.StorageMap
 	dhtBootstrap string
+	webCrawler   *webcrawler.Crawler
 }
 
 //NewGossiper creates a new gossiper
-func NewGossiper(address, name string, UIport string, peers []string, simple bool, rtimeout int, dhtBootstrap string) *Gossiper {
+func NewGossiper(address, name string, UIport string, peers []string, simple bool, rtimeout int, dhtBootstrap string, crawlLeader bool) *Gossiper {
 	gossipAddr, err := net.ResolveUDPAddr("udp4", address)
 	dto.LogError(err)
 	clientAddr, err := net.ResolveUDPAddr("udp4", "localhost:"+UIport)
@@ -107,8 +109,12 @@ func NewGossiper(address, name string, UIport string, peers []string, simple boo
 		dhtChanMap:   dht.NewChanMap(),
 		storage:      dht.NewStorageMap(),
 		dhtBootstrap: dhtBootstrap,
+
+		webCrawler: webcrawler.New(crawlLeader),
 	}
+
 	g.bucketTable = newBucketTable(g.dhtMyID, g)
+
 	return g
 }
 
@@ -165,6 +171,9 @@ func (g *Gossiper) Start() {
 	if g.dhtBootstrap != "" {
 		g.dhtJoin(g.dhtBootstrap)
 	}
+
+	go g.webCrawlerListenerRoutine()
+	g.webCrawler.Start()
 
 	g.receiveClientUDP(cUI, cUIPM, cFileShare, cFileDL, cFileSearch, cCliDHT)
 }
@@ -355,6 +364,10 @@ func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, c
 				log.Println("Running on 'simple' mode. Ignoring dhtmessage message from " + senderAddress + "...")
 			} else {
 				cDHT <- pap
+			}
+		case "hyperlinkmessage":
+			g.webCrawler.InChan <- &webcrawler.CrawlerPacket{
+				HyperlinkPackage: packet.HyperlinkMessage,
 			}
 		default:
 			log.Println("Unrecognized message type. Ignoring message from " + senderAddress + "...")

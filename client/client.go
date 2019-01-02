@@ -69,9 +69,9 @@ func (c *Client) sendUDP() {
 	var request *dto.ClientRequest
 	if c.store != "" {
 		tmp := strings.Split(c.store, ":")
-		key, value := tmp[0], tmp[1]
-		key = dht.GenerateKeyHash(key)
-		idB, err := hex.DecodeString(key)
+		key, value := strings.ToLower(tmp[0]), tmp[1]
+		hash := dht.GenerateKeyHash(key)
+		idB, err := hex.DecodeString(hex.EncodeToString(hash[:]))
 		if err != nil {
 			fmt.Print(err)
 			return
@@ -112,8 +112,9 @@ func (c *Client) sendUDP() {
 		lookup := &dto.DHTLookup{Node: &id}
 		request = &dto.ClientRequest{DHTLookup: lookup}
 	} else if c.lookupKey != "" {
-		key := dht.GenerateKeyHash(c.lookupKey)
-		idB, err := hex.DecodeString(key)
+		key := strings.ToLower(c.lookupKey)
+		hash := dht.GenerateKeyHash(key)
+		idB, err := hex.DecodeString(hex.EncodeToString(hash[:]))
 		if err != nil {
 			fmt.Print(err)
 			return

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/mvidigueira/Peerster/dht"
+	"github.com/mvidigueira/Peerster/webcrawler"
 )
 
 //SimpleMessage - subtype of GossipPacket to be used between peers when running in 'simple' mode
@@ -211,17 +212,18 @@ func (t *TxPublish) Hash() (out [32]byte) {
 
 //GossipPacket - protocol structure to be serialized and sent between peers
 type GossipPacket struct {
-	Simple        *SimpleMessage
-	Rumor         *RumorMessage
-	Status        *StatusPacket
-	Private       *PrivateMessage
-	DataRequest   *DataRequest
-	DataReply     *DataReply
-	SearchRequest *SearchRequest
-	SearchReply   *SearchReply
-	TxPublish     *TxPublish
-	BlockPublish  *BlockPublish
-	DHTMessage    *dht.Message
+	Simple           *SimpleMessage
+	Rumor            *RumorMessage
+	Status           *StatusPacket
+	Private          *PrivateMessage
+	DataRequest      *DataRequest
+	DataReply        *DataReply
+	SearchRequest    *SearchRequest
+	SearchReply      *SearchReply
+	TxPublish        *TxPublish
+	BlockPublish     *BlockPublish
+	DHTMessage       *dht.Message
+	HyperlinkMessage *webcrawler.HyperlinkPackage
 }
 
 //GetUnderlyingType - returns the underlying type of the gossip packet, or the empty string in case of no subtype
@@ -248,6 +250,8 @@ func (g *GossipPacket) GetUnderlyingType() (subtype string) {
 		subtype = "blockpublish"
 	} else if g.DHTMessage != nil {
 		subtype = "dhtmessage"
+	} else if g.HyperlinkMessage != nil {
+		subtype = "hyperlinkmessage"
 	} else {
 		subtype = ""
 	}

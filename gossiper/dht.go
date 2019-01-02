@@ -1,6 +1,7 @@
 package gossiper
 
 import (
+	"encoding/hex"
 	"fmt"
 	"math/rand"
 	"protobuf"
@@ -92,6 +93,8 @@ func (g *Gossiper) sendStore(ns *dht.NodeState, key dht.TypeID, data []byte, sto
 	return nil
 }
 
+var stores = 0
+
 // replyStore - "replies" to a store rpc (stores the data locally)
 func (g *Gossiper) replyStore(msg *dht.Message) {
 	storeType := msg.Store.Type
@@ -103,11 +106,22 @@ func (g *Gossiper) replyStore(msg *dht.Message) {
 		}
 	case "PUT":
 		// My goal was to implement a generic PUT method but I did not manage to unite protobuf and interfaces
-		// hence I gave up temporarility and created a PUT method for the specific use case (keyword -> (url, keyword frequency)) I have at the momet.
-		ok := g.storage.StoreKeywordToURLMapping(msg.Store.Key, msg.Store.Data)
-		if !ok {
-			fmt.Printf("Failed to finish PUT operation.\n")
+		// hence I gave up temporarility and created a PUT method for the specific use case (keyword -> (url, keyword frequency)) I have at the moment.
+		batchTemp := &dht.KeywordToURLBatchStruct{}
+		protobuf.Decode(msg.Store.Data, batchTemp)
+		for _, item := range batchTemp.List {
+			stores++
+			dat, err := protobuf.Encode(item)
+			if err != nil {
+				fmt.Printf("Error decode")
+				return
+			}
+			ok := g.storage.StoreKeywordToURLMapping(item.KeywordHash, dat)
+			if !ok {
+				fmt.Printf("Failed to finish PUT operation.\n")
+			}
 		}
+
 	default:
 		fmt.Printf("Unknown store type: %s.", storeType)
 	}
@@ -124,7 +138,7 @@ func (g *Gossiper) sendLookupNode(ns *dht.NodeState, id dht.TypeID) chan *dht.Me
 		panic("Something went very wrong")
 	}
 
-	fmt.Printf("Sending node lookup for %x to node %x\n", id, ns.NodeID)
+	//fmt.Printf("Sending node lookup for %x to node %x\n", id, ns.NodeID)
 
 	g.sendUDP(packet, ns.Address)
 
@@ -183,7 +197,7 @@ func (g *Gossiper) dhtMessageListenRoutine(cDHTMessage chan *dto.PacketAddressPa
 			fmt.Printf("PING from %x\n", msg.SenderID)
 			g.replyPing(sender, msg)
 		case "nodelookup":
-			fmt.Printf("NODE LOOKUP for node %x from %x\n", msg.NodeLookup.NodeID, msg.SenderID)
+			//fmt.Printf("NODE LOOKUP for node %x from %x\n", msg.NodeLookup.NodeID, msg.SenderID)
 			g.replyLookupNode(sender, msg)
 		case "valuelookup":
 			fmt.Printf("VALUE LOOKUP for key %x from %x\n", msg.ValueLookup.Key, msg.SenderID)
@@ -192,7 +206,7 @@ func (g *Gossiper) dhtMessageListenRoutine(cDHTMessage chan *dto.PacketAddressPa
 			fmt.Printf("PING REPLY from %x\n", msg.SenderID)
 			g.dhtChanMap.InformListener(msg.Nonce, msg)
 		case "nodereply":
-			fmt.Printf("NODE REPLY with results %s from %x\n", dht.String(msg.NodeReply.NodeStates), msg.SenderID)
+			//fmt.Printf("NODE REPLY with results %s from %x\n", dht.String(msg.NodeReply.NodeStates), msg.SenderID)
 			g.dhtChanMap.InformListener(msg.Nonce, msg)
 		case "valuereply":
 			if msg.ValueReply.Data != nil {
@@ -202,7 +216,7 @@ func (g *Gossiper) dhtMessageListenRoutine(cDHTMessage chan *dto.PacketAddressPa
 			}
 			g.dhtChanMap.InformListener(msg.Nonce, msg)
 		case "store":
-			fmt.Printf("STORE REQUEST from %x\n", msg.SenderID)
+			//fmt.Printf("STORE REQUEST from %x\n", msg.SenderID)
 			g.replyStore(msg)
 		}
 	}
@@ -255,7 +269,7 @@ func (g *Gossiper) clientDHTListenRoutine(cCliDHT chan *dto.DHTRequest) {
 				newKeywordToUrlMap := &dht.KeywordToURLMap{}
 				err := protobuf.Decode(data, newKeywordToUrlMap)
 				if err == nil && found {
-					fmt.Printf("Keyword: %s\n", newKeywordToUrlMap.Keyword)
+					fmt.Printf("Keyword: %s\n", hex.EncodeToString(newKeywordToUrlMap.KeywordHash[:]))
 					for k, v := range newKeywordToUrlMap.Urls {
 						fmt.Printf("document: %s, number of occurances in document: %d\n", k, v)
 					}
