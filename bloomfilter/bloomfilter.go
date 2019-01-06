@@ -74,9 +74,9 @@ func (bf *BloomFilter) mInBits() int {
 func (bf *BloomFilter) position(elem []byte, hf hash.Hash64) (uint64, uint64) {
 	hf.Reset()
 	hf.Write(elem)
-	hash := hf.Sum64()
+	hashSum := hf.Sum64()
 	mask := bf.mask(bf.mInBits())
-	val := hash & mask
+	val := hashSum & mask
 
 	bitIndex := uint64(val % uint64Size)
 	bitsetIndex := uint64(math.Floor(float64(val) / uint64Size))

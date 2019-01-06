@@ -1,10 +1,14 @@
 package gossiper
 
 import (
-	"encoding/hex"
 	"fmt"
+	"github.com/mvidigueira/Peerster/webcrawler"
+	"github.com/reiver/go-porterstemmer"
+	"go.etcd.io/bbolt"
+	"log"
 	"math/rand"
 	"protobuf"
+	"sort"
 	"strings"
 	"time"
 
@@ -35,8 +39,8 @@ func (g *Gossiper) newDHTNodeReply(nodeStates []*dht.NodeState, nonce uint64) *d
 	return &dht.Message{Nonce: nonce, SenderID: g.dhtMyID, NodeReply: reply}
 }
 
-func (g *Gossiper) newDHTValueLookup(key dht.TypeID) *dht.Message {
-	lookup := &dht.ValueLookup{Key: key}
+func (g *Gossiper) newDHTValueLookup(key dht.TypeID, dbBucket string) *dht.Message {
+	lookup := &dht.ValueLookup{Key: key, DbBucket: dbBucket}
 	return &dht.Message{Nonce: rand.Uint64(), SenderID: g.dhtMyID, ValueLookup: lookup}
 }
 
@@ -99,15 +103,8 @@ var stores = 0
 func (g *Gossiper) replyStore(msg *dht.Message) {
 	storeType := msg.Store.Type
 	switch storeType {
-	case "POST":
-		isNew := g.storage.Store(msg.Store.Key, msg.Store.Data)
-		if !isNew {
-			fmt.Printf("Repeat store. Key: %x\n", msg.Store.Key)
-		}
-	case "PUT":
-		// My goal was to implement a generic PUT method but I did not manage to unite protobuf and interfaces
-		// hence I gave up temporarility and created a PUT method for the specific use case (keyword -> (url, keyword frequency)) I have at the moment.
-		batchTemp := &dht.KeywordToURLBatchStruct{}
+	case dht.KeywordsBucket:
+		batchTemp := &dht.BatchMessage{}
 		protobuf.Decode(msg.Store.Data, batchTemp)
 		for _, item := range batchTemp.List {
 			stores++
@@ -116,11 +113,19 @@ func (g *Gossiper) replyStore(msg *dht.Message) {
 				fmt.Printf("Error decode")
 				return
 			}
-			ok := g.storage.StoreKeywordToURLMapping(item.KeywordHash, dat)
+			ok := g.dhtDb.AddLinksForKeyword(item.Keyword, dat)
 			if !ok {
-				fmt.Printf("Failed to finish PUT operation.\n")
+				fmt.Printf("Failed to add keywords.\n")
 			}
 		}
+	case dht.PageHashBucket:
+		g.dhtDb.Db.Update(func(tx *bbolt.Tx) error {
+			b := tx.Bucket([]byte(storeType))
+			b.Put(msg.Store.Key[:], msg.Store.Data)
+			return nil
+		})
+	case dht.LinksBucket:
+		log.Fatal("TODO: links ")
 
 	default:
 		fmt.Printf("Unknown store type: %s.", storeType)
@@ -154,8 +159,8 @@ func (g *Gossiper) replyLookupNode(senderAddr string, lookup *dht.Message) {
 }
 
 // LookupKey - sends a RPC to node 'ns' for lookup of key 'key'
-func (g *Gossiper) sendLookupKey(ns *dht.NodeState, key dht.TypeID) chan *dht.Message {
-	msg := g.newDHTValueLookup(key)
+func (g *Gossiper) sendLookupKey(ns *dht.NodeState, key dht.TypeID, dbBucket string) chan *dht.Message {
+	msg := g.newDHTValueLookup(key, dbBucket)
 	rpcNum := msg.Nonce
 	packet := &dto.GossipPacket{DHTMessage: msg}
 	c, isNew := g.dhtChanMap.AddListener(rpcNum)
@@ -171,7 +176,7 @@ func (g *Gossiper) sendLookupKey(ns *dht.NodeState, key dht.TypeID) chan *dht.Me
 // ReplyLookupKey - replies to dht message 'lookupKey', from node with address 'senderAddr'
 func (g *Gossiper) replyLookupKey(senderAddr string, lookupKey *dht.Message) {
 	var msg *dht.Message
-	if data, ok := g.storage.Retrieve(lookupKey.ValueLookup.Key); ok {
+	if data, ok := g.dhtDb.Retrieve(lookupKey.ValueLookup.Key, lookupKey.ValueLookup.DbBucket); ok {
 		msg = g.newDHTValueReplyData(data, lookupKey.Nonce)
 	} else {
 		results := g.bucketTable.alphaClosest(lookupKey.ValueLookup.Key, bucketSize)
@@ -193,29 +198,29 @@ func (g *Gossiper) dhtMessageListenRoutine(cDHTMessage chan *dto.PacketAddressPa
 		}
 
 		switch msg.GetUnderlyingType() {
-		case "ping":
+		case dht.PingT:
 			fmt.Printf("PING from %x\n", msg.SenderID)
 			g.replyPing(sender, msg)
-		case "nodelookup":
+		case dht.NodeLookupT:
 			//fmt.Printf("NODE LOOKUP for node %x from %x\n", msg.NodeLookup.NodeID, msg.SenderID)
 			g.replyLookupNode(sender, msg)
-		case "valuelookup":
+		case dht.ValueLookupT:
 			fmt.Printf("VALUE LOOKUP for key %x from %x\n", msg.ValueLookup.Key, msg.SenderID)
 			g.replyLookupKey(sender, msg)
-		case "pingreply":
+		case dht.PingReplyT:
 			fmt.Printf("PING REPLY from %x\n", msg.SenderID)
 			g.dhtChanMap.InformListener(msg.Nonce, msg)
-		case "nodereply":
+		case dht.NodeReplyT:
 			//fmt.Printf("NODE REPLY with results %s from %x\n", dht.String(msg.NodeReply.NodeStates), msg.SenderID)
 			g.dhtChanMap.InformListener(msg.Nonce, msg)
-		case "valuereply":
+		case dht.ValueReplyT:
 			if msg.ValueReply.Data != nil {
 				fmt.Printf("VALUE REPLY with data: %x from %x\n", *msg.ValueReply.Data, msg.SenderID)
 			} else {
 				fmt.Printf("VALUE REPLY with results %s from %x\n", dht.String(*msg.ValueReply.NodeStates), msg.SenderID)
 			}
 			g.dhtChanMap.InformListener(msg.Nonce, msg)
-		case "store":
+		case dht.StoreT:
 			//fmt.Printf("STORE REQUEST from %x\n", msg.SenderID)
 			g.replyStore(msg)
 		}
@@ -247,6 +252,21 @@ func (g *Gossiper) printKnownNodes() {
 	fmt.Printf("Known DHT nodes: %s\n", strings.Join(nodes, ", "))
 }
 
+func (g *Gossiper) lookupWord(token string) (urlMap *dht.KeywordToURLMap){
+	word := porterstemmer.StemString(token)
+	data, found := g.LookupValue(dht.GenerateKeyHash(word), dht.KeywordsBucket)
+	if !found {
+		log.Printf("Keyword not found: %s\n", token)
+		return
+	}
+	urlMap = &dht.KeywordToURLMap{}
+	err := protobuf.Decode(data, urlMap)
+	if  err != nil {
+		panic(err)
+	}
+	return
+}
+
 func (g *Gossiper) clientDHTListenRoutine(cCliDHT chan *dto.DHTRequest) {
 	for request := range cCliDHT {
 		switch {
@@ -262,24 +282,19 @@ func (g *Gossiper) clientDHTListenRoutine(cCliDHT chan *dto.DHTRequest) {
 				}
 				fmt.Printf("Closest DHT nodes found: %s\n", strings.Join(nodes, ", "))
 			} else {
-				fmt.Printf("Starting lookup for key: %x\n", *lookup.Key)
-				data, found := g.LookupValue(*lookup.Key)
+				log.Printf("Starting lookup for %s \n", *lookup.Key)
 
-				// Seperate printing function for lookups containing KeywordToURLMap structs
-				newKeywordToUrlMap := &dht.KeywordToURLMap{}
-				err := protobuf.Decode(data, newKeywordToUrlMap)
-				if err == nil && found {
-					fmt.Printf("Keyword: %s\n", hex.EncodeToString(newKeywordToUrlMap.KeywordHash[:]))
-					for k, v := range newKeywordToUrlMap.Urls {
-						fmt.Printf("document: %s, number of occurances in document: %d\n", k, v)
-					}
+				tokens := strings.Split(*lookup.Key, " ")
+				if len(tokens) < 0 {
 					continue
 				}
-
-				if found {
-					fmt.Printf("Found data for key %x.\nPrinting as string: %s\n", *lookup.Key, data)
-				} else {
-					fmt.Printf("Could not find data for key %x\n", *lookup.Key)
+				results := webcrawler.NewSearchResults(g.lookupWord(tokens[0]))
+				sort.Sort(results)
+				for _, t := range tokens[1:] {
+					results = webcrawler.Join(results, g.lookupWord(t))
+				}
+				for _, result := range results {
+					log.Printf("RESULT: %s, (%d)\n", result.Link, result.KeywordOccurences)
 				}
 			}
 		case request.Store != nil:

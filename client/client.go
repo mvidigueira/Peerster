@@ -112,19 +112,8 @@ func (c *Client) sendUDP() {
 		lookup := &dto.DHTLookup{Node: &id}
 		request = &dto.ClientRequest{DHTLookup: lookup}
 	} else if c.lookupKey != "" {
-		key := strings.ToLower(c.lookupKey)
-		hash := dht.GenerateKeyHash(key)
-		idB, err := hex.DecodeString(hex.EncodeToString(hash[:]))
-		if err != nil {
-			fmt.Print(err)
-			return
-		}
-		id, ok := dht.ConvertToTypeID(idB)
-		if !ok {
-			fmt.Print(err)
-			return
-		}
-		lookup := &dto.DHTLookup{Key: &id}
+		log.Println(c.lookupKey)
+		lookup := &dto.DHTLookup{Key: &c.lookupKey}
 		request = &dto.ClientRequest{DHTLookup: lookup}
 	} else if c.keywords != "" {
 		file2search := &dto.FileToSearch{Budget: c.budget, Keywords: strings.Split(c.keywords, ",")}

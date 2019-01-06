@@ -22,7 +22,7 @@ func (g *Gossiper) webCrawlerListenerRoutine() {
 		case packet.PageHash != nil && packet.PageHash.Type == "store":
 			g.savePageHashInDHT(packet.PageHash)
 		case packet.PageHash != nil && packet.PageHash.Type == "lookup":
-			_, found := g.LookupValue(packet.PageHash.Hash)
+			_, found := g.LookupValue(packet.PageHash.Hash, dht.PageHashBucket)
 			packet.ResChan <- found
 		}
 	}
@@ -92,13 +92,13 @@ func (g *Gossiper) batchSendKeywords(owner *dht.NodeState, items []*dht.KeywordT
 		for k, b := range batch.([]interface{}) {
 			tmp[k] = b.(*dht.KeywordToURLMap)
 		}
-		packetBytes, err := protobuf.Encode(&dht.KeywordToURLBatchStruct{List: tmp})
+		packetBytes, err := protobuf.Encode(&dht.BatchMessage{List: tmp})
 		if err != nil {
 			fmt.Println(err)
 			fmt.Printf("Error encoding urlToKeywordMap.\n")
 			break
 		}
-		err = g.sendStore(owner, [20]byte{}, packetBytes, "PUT")
+		err = g.sendStore(owner, [20]byte{}, packetBytes, dht.KeywordsBucket)
 		if err != nil {
 			fmt.Printf("Failed to store key.\n")
 		}
@@ -160,8 +160,8 @@ func (g *Gossiper) saveKeywordsInDHT(indexPackage *webcrawler.IndexPackage) {
 		}
 		closest := kClosest[0]
 		urlToKeywordMap := &dht.KeywordToURLMap{
-			KeywordHash: keyHash,
-			Urls:        map[string]int{url: v},
+			Keyword: k,
+			LinkData:        map[string]int{url: v},
 		}
 		val, found := destinations[*closest]
 		if !found {
@@ -176,22 +176,21 @@ func (g *Gossiper) saveKeywordsInDHT(indexPackage *webcrawler.IndexPackage) {
 	for dest, batch := range destinations {
 		if dest.Address == g.address {
 			// This node is the destination
-			packetBytes, err := protobuf.Encode(&dht.KeywordToURLBatchStruct{List: batch})
+			packetBytes, err := protobuf.Encode(&dht.BatchMessage{List: batch})
 			if err != nil {
 				fmt.Println(err)
 				return
 			}
-			msg := g.newDHTStore(dest.NodeID, packetBytes, "PUT")
+			msg := g.newDHTStore(dest.NodeID, packetBytes, dht.KeywordsBucket)
 			g.replyStore(msg)
 			continue
 		}
 		g.batchSendKeywords(&dest, batch)
-
 	}
 }
 
 // Saves the hash of a page in the DHT. This is used to prevent duplicate crawling of the same page.
-// The reason why we hash the content instead of the url is becasue there might be different urls which points to the same page.
+// The reason why we hash the content instead of the url is because there might be different urls which points to the same page.
 func (g *Gossiper) savePageHashInDHT(pageHash *webcrawler.PageHashPackage) {
 	kClosest := g.LookupNodes(pageHash.Hash)
 	if len(kClosest) == 0 {
@@ -199,7 +198,7 @@ func (g *Gossiper) savePageHashInDHT(pageHash *webcrawler.PageHashPackage) {
 		return
 	}
 	closest := kClosest[0]
-	err := g.sendStore(closest, pageHash.Hash, []byte(""), "POST")
+	err := g.sendStore(closest, pageHash.Hash, []byte(""), dht.PageHashBucket)
 	if err != nil {
 		fmt.Printf("Failed to store key %s.\n", pageHash)
 	}

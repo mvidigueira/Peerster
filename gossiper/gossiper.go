@@ -57,7 +57,7 @@ type Gossiper struct {
 	dhtMyID      [dht.IDByteSize]byte
 	dhtChanMap   *dht.ChanMap
 	bucketTable  *bucketTable
-	storage      *dht.StorageMap
+	dhtDb        *dht.Storage
 	dhtBootstrap string
 	webCrawler   *webcrawler.Crawler
 }
@@ -105,9 +105,9 @@ func NewGossiper(address, name string, UIport string, peers []string, simple boo
 
 		blockchainLedger: NewBlockchainLedger(),
 
+		dhtDb: dht.NewStorage(name),
 		dhtMyID:      dht.InitialRandNodeID(),
 		dhtChanMap:   dht.NewChanMap(),
-		storage:      dht.NewStorageMap(),
 		dhtBootstrap: dhtBootstrap,
 
 		webCrawler: webcrawler.New(crawlLeader),

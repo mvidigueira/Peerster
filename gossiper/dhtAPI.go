@@ -116,26 +116,25 @@ func makeSelectCases(chans []chan []*dht.NodeState, timeoutSec int) (cases []ref
 // LookupValue looks for the closest nodes to a specific id (up to k nodes).
 // This id can represent a nodeID or a key hash.
 // Unlike LookupValue, it does not stop early if it encounters a node with the key stored.
-func (g *Gossiper) LookupValue(id dht.TypeID) (data []byte, found bool) {
-	if data, found = g.storage.Retrieve(id); found {
+func (g *Gossiper) LookupValue(id dht.TypeID, dbBucket string) (data []byte, found bool) {
+	if data, found = g.dhtDb.Retrieve(id, dbBucket); found {
 		return
 	}
-
 	snsa := dht.NewSafeNodeStateArray(id)
 	results := g.bucketTable.alphaClosest(id, 3)
 	snsa.InsertArray(results, g.dhtMyID)
 
-	return g.lookupRoundValue(snsa)
+	return g.lookupRoundValue(snsa, dbBucket)
 }
 
-func (g *Gossiper) lookupFinalPhaseValue(snsa *dht.SafeNodeStateArray) (data []byte, found bool) {
+func (g *Gossiper) lookupFinalPhaseValue(snsa *dht.SafeNodeStateArray, dbBucket string) (data []byte, found bool) {
 	unqueried, _ := snsa.GetKClosestUnqueried(bucketSize)
 
 	chans := make([]chan *dht.Message, len(unqueried))
 	for i, node := range unqueried {
 		chans[i] = make(chan *dht.Message)
 		snsa.SetQueried(node)
-		go g.lookupSingleValue(node, snsa, chans[i])
+		go g.lookupSingleValue(node, snsa, chans[i], dbBucket)
 	}
 
 	cases := makeSelectCasesValue(chans, 1)
@@ -146,9 +145,9 @@ func (g *Gossiper) lookupFinalPhaseValue(snsa *dht.SafeNodeStateArray) (data []b
 		chosen, v, _ := reflect.Select(cases)
 		if chosen == (len(cases) - 1) { //timeout
 			if closer {
-				return g.lookupRoundValue(snsa)
+				return g.lookupRoundValue(snsa, dbBucket)
 			}
-			return g.lookupFinalPhaseValue(snsa)
+			return g.lookupFinalPhaseValue(snsa, dbBucket)
 		}
 
 		msg := v.Interface().(*dht.Message)
@@ -160,23 +159,23 @@ func (g *Gossiper) lookupFinalPhaseValue(snsa *dht.SafeNodeStateArray) (data []b
 		answered++
 		if answered == len(unqueried) {
 			if closer {
-				return g.lookupRoundValue(snsa)
+				return g.lookupRoundValue(snsa, dbBucket)
 			}
-			return g.lookupFinalPhaseValue(snsa)
+			return g.lookupFinalPhaseValue(snsa, dbBucket)
 		}
 	}
 
 	return
 }
 
-func (g *Gossiper) lookupRoundValue(snsa *dht.SafeNodeStateArray) (data []byte, found bool) {
+func (g *Gossiper) lookupRoundValue(snsa *dht.SafeNodeStateArray, dbBucket string) (data []byte, found bool) {
 	closestNodes := snsa.GetAlphaUnqueried(3)
 
 	chans := make([]chan *dht.Message, len(closestNodes))
 	for i, node := range closestNodes {
 		chans[i] = make(chan *dht.Message)
 		snsa.SetQueried(node)
-		go g.lookupSingleValue(node, snsa, chans[i])
+		go g.lookupSingleValue(node, snsa, chans[i], dbBucket)
 	}
 
 	answered := 0
@@ -186,9 +185,9 @@ func (g *Gossiper) lookupRoundValue(snsa *dht.SafeNodeStateArray) (data []byte, 
 		chosen, v, _ := reflect.Select(cases)
 		if chosen == (len(cases) - 1) { //timeout
 			if closer {
-				return g.lookupRoundValue(snsa)
+				return g.lookupRoundValue(snsa, dbBucket)
 			}
-			return g.lookupFinalPhaseValue(snsa)
+			return g.lookupFinalPhaseValue(snsa, dbBucket)
 		}
 
 		msg := v.Interface().(*dht.Message)
@@ -201,17 +200,17 @@ func (g *Gossiper) lookupRoundValue(snsa *dht.SafeNodeStateArray) (data []byte, 
 		answered++
 		if answered == len(closestNodes) {
 			if closer {
-				return g.lookupRoundValue(snsa)
+				return g.lookupRoundValue(snsa, dbBucket)
 			}
-			return g.lookupFinalPhaseValue(snsa)
+			return g.lookupFinalPhaseValue(snsa, dbBucket)
 		}
 	}
 
 	return
 }
 
-func (g *Gossiper) lookupSingleValue(ns *dht.NodeState, snsa *dht.SafeNodeStateArray, msg chan *dht.Message) {
-	ch := g.sendLookupKey(ns, snsa.Target)
+func (g *Gossiper) lookupSingleValue(ns *dht.NodeState, snsa *dht.SafeNodeStateArray, msg chan *dht.Message, dbBucket string) {
+	ch := g.sendLookupKey(ns, snsa.Target, dbBucket)
 	v := <-ch
 	snsa.SetResponded(ns)
 	msg <- v

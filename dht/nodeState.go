@@ -34,29 +34,40 @@ type Message struct {
 	ValueReply  *ValueReply
 }
 
-func (msg *Message) GetUnderlyingType() string {
+type MessageType int
+const (
+	StoreT MessageType = iota
+	PingT
+	PingReplyT
+	NodeLookupT
+	NodeReplyT
+	ValueLookupT
+	ValueReplyT
+)
+
+func (msg *Message) GetUnderlyingType() MessageType {
 	if msg.Store != nil {
-		return "store"
+		return StoreT
 	} else if msg.Ping != nil {
-		return "ping"
+		return PingT
 	} else if msg.PingReply != nil {
-		return "pingreply"
+		return PingReplyT
 	} else if msg.NodeLookup != nil {
-		return "nodelookup"
+		return NodeLookupT
 	} else if msg.NodeReply != nil {
-		return "nodereply"
+		return NodeReplyT
 	} else if msg.ValueLookup != nil {
-		return "valuelookup"
+		return ValueLookupT
 	} else if msg.ValueReply != nil {
-		return "valuereply"
+		return ValueReplyT
 	} else {
-		return ""
+		return -1
 	}
 }
 
 type Store struct {
 	Key  TypeID
-	Type string // PUT or POST
+	Type string // PUT
 	Data []byte
 }
 
@@ -74,6 +85,8 @@ type NodeReply struct {
 
 type ValueLookup struct {
 	Key TypeID
+	DbKey      string
+	DbBucket string
 }
 
 type ValueReply struct {

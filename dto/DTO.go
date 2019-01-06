@@ -852,7 +852,7 @@ func (fts *FileToSearch) GetKeywords() []string {
 
 type DHTLookup struct {
 	Node *dht.TypeID
-	Key  *dht.TypeID
+	Key  *string
 }
 
 type DHTStore struct {

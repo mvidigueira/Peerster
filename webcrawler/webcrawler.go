@@ -16,11 +16,12 @@ import (
 	"github.com/bbalet/stopwords"
 	"github.com/mvidigueira/Peerster/bloomfilter"
 	"github.com/mvidigueira/Peerster/dht"
+	porterstemmer "github.com/reiver/go-porterstemmer"
 )
 
 type Crawler struct {
-	crawlQueue  []string
 	mux         *sync.Mutex
+	crawlQueue  []string
 	domain      string
 	InChan      chan *CrawlerPacket
 	OutChan     chan *CrawlerPacket
@@ -179,11 +180,8 @@ func (wc *Crawler) extractWords(doc goquery.Document) []string {
 		// Tokenize
 		tokens := strings.Split(processedString, " ")
 
-		//Very slow -
-		//lemmatizer, _ := golem.New("english")
 		validWord := regexp.MustCompile(`^[a-zA-Z]+$`)
-		for _, t := range tokens {
-			word := t //lemmatizer.Lemma(t)
+		for _, word := range tokens {
 			// We make the assumption that most "valuable" words have a length greater than 2.
 			if len(word) < 3 {
 				continue
@@ -191,7 +189,7 @@ func (wc *Crawler) extractWords(doc goquery.Document) []string {
 			if !validWord.MatchString(word) {
 				continue
 			}
-			word = strings.ToLower(word)
+			word = porterstemmer.StemString(word)
 			words = append(words, word)
 		}
 	})
@@ -226,42 +224,12 @@ func (wc *Crawler) extractText(text string) string {
 
 // Removes unwanted parts of wikipedia HTML pages
 func (wc *Crawler) cleanPage(doc goquery.Document) goquery.Document {
-	doc.Find("script").Each(func(i int, el *goquery.Selection) {
-		el.Remove()
-	})
-	doc.Find("head").Each(func(i int, el *goquery.Selection) {
-		el.Remove()
-	})
-	doc.Find("style").Each(func(i int, el *goquery.Selection) {
-		el.Remove()
-	})
-	doc.Find("img").Each(func(i int, el *goquery.Selection) {
-		el.Remove()
-	})
-	doc.Find("span").Each(func(i int, el *goquery.Selection) {
-		el.Remove()
-	})
-	doc.Find("div[id=mw-navigation]").Each(func(i int, el *goquery.Selection) {
-		el.Remove()
-	})
-	doc.Find("div[id=toc]").Each(func(i int, el *goquery.Selection) {
-		el.Remove()
-	})
-	doc.Find("div[id=Further_reading]").Each(func(i int, el *goquery.Selection) {
-		el.Remove()
-	})
-	doc.Find("div[id=External_links]").Each(func(i int, el *goquery.Selection) {
-		el.Remove()
-	})
-	doc.Find("div[id=catlinks]").Each(func(i int, el *goquery.Selection) {
-		el.Remove()
-	})
-	doc.Find("div[id=footer]").Each(func(i int, el *goquery.Selection) {
-		el.Remove()
-	})
-	doc.Find("div[class=nowraplinks]").Each(func(i int, el *goquery.Selection) {
-		el.Remove()
-	})
+	toRemove := []string{"script", "head", "style","img","span","div[id=mw-navigation]", "div[id=toc]", "div[id=Further_reading]",  "div[id=External_links]", "div[id=catlinks]", "div[id=footer]", "div[class=nowraplinks]"}
+	for _, element := range toRemove {
+		doc.Find(element).Each(func(i int, el *goquery.Selection) {
+			el.Remove()
+		})
+	}
 
 	doc.RemoveClass("reflist")
 	doc.RemoveClass("nowraplinks")

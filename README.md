@@ -6,7 +6,7 @@ Couse Project - Decentralized Systems Engineering 18 (EPFL)
 
 ### Install dependencies 
 
-1. Protobuf - https://github.com/golang/protobuf
+1. Protobuf - https://github.com/dedis/protobuf
 2. Murmur3 (hash-function) - github.com/spaolacci/murmur3
 3. Goquery (html parsing library) - github.com/PuerkitoBio/goquery
 4. Stopwords - github.com/bbalet/stopwords
