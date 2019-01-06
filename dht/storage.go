@@ -1,9 +1,10 @@
 package dht
 
 import (
-	"fmt"
+	"github.com/mvidigueira/Peerster/webcrawler"
 	bolt "go.etcd.io/bbolt"
 	"protobuf"
+	. "github.com/mvidigueira/Peerster/dht_util"
 )
 
 const (
@@ -21,15 +22,6 @@ type Storage struct {
 // the keywords and URLs in struct but I could not think about any other way.
 // The definiton of KeywordToURLMap will move to the webcrawler package but it is in a seperate branch at the moment. I will move this when
 // I merge the two branches.
-type KeywordToURLMap struct {
-	Keyword string
-	LinkData map[string]int //url:keywordOccurrences
-}
-
-// You cannot serialize plain lists with protobuf but you have to wrap it in a struct
-type BatchMessage struct {
-	List []*KeywordToURLMap
-}
 
 func NewStorage(gossiperName string) (s *Storage){
 	db, err := bolt.Open(gossiperName+"_index.db", 0666, nil)
@@ -66,23 +58,18 @@ func (s *Storage) Retrieve(key TypeID, bucket string) (data []byte, ok bool) {
 	return
 }
 
-func (s *Storage) AddLinksForKeyword(key string, data []byte) (ok bool) {
+func (s *Storage) AddLinksForKeyword(key string, newKeywordToUrlMap webcrawler.KeywordToURLMap) (ok bool) {
 	ok = true
-	newKeywordToUrlMap := &KeywordToURLMap{}
-	err := protobuf.Decode(data, newKeywordToUrlMap)
-	if err != nil {
-		fmt.Println("Error, trying to save non KeyWordToURLMapping data type.")
-		return false
-	}
  	idArray := GenerateKeyHash(key)
  	id := idArray[:]
+	var err error
 
 	s.Db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(KeywordsBucket))
-		var keywordMap KeywordToURLMap
+		var keywordMap webcrawler.KeywordToURLMap
 		data := b.Get(id)
 		if data == nil {
-			keywordMap = KeywordToURLMap{key, make(map[string]int)}
+			keywordMap = webcrawler.KeywordToURLMap{key, make(map[string]int)}
 		} else {
 			err = protobuf.Decode(data, &keywordMap)
 			if err != nil {

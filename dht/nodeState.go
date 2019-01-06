@@ -3,11 +3,8 @@ package dht
 import (
 	"fmt"
 	"strings"
+	. "github.com/mvidigueira/Peerster/dht_util"
 )
-
-const IDByteSize = 160 / 8
-
-type TypeID [IDByteSize]byte
 
 func String(ns []*NodeState) string {
 	nodes := make([]string, 0)

@@ -2,6 +2,7 @@ package webcrawler
 
 import (
 	"fmt"
+	"github.com/mvidigueira/Peerster/dht_util"
 	"hash"
 	"hash/fnv"
 	"log"
@@ -15,8 +16,7 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"github.com/bbalet/stopwords"
 	"github.com/mvidigueira/Peerster/bloomfilter"
-	"github.com/mvidigueira/Peerster/dht"
-	porterstemmer "github.com/reiver/go-porterstemmer"
+	"github.com/reiver/go-porterstemmer"
 )
 
 type Crawler struct {
@@ -95,6 +95,14 @@ func (wc *Crawler) crawl() {
 					continue
 				}
 
+				//Store the outbound links of this page
+				wc.OutChan <- &CrawlerPacket{
+					OutBoundLinks: &OutBoundLinksPackage{
+						Url: nextPage,
+						OutBoundLinks: page.Hyperlinks,
+					},
+				}
+
 				// Filter out urls that already has been crawler by this crawler
 				filteredHyperLinks := make([]string, 0, len(page.Hyperlinks))
 				for _, hyperlink := range page.Hyperlinks {
@@ -160,7 +168,7 @@ func (wc *Crawler) crawlUrl(urlString string) *PageInfo {
 
 	words := wc.extractWords(doc)
 
-	return &PageInfo{Hyperlinks: wc.removeDuplicates(urls), KeywordFrequencies: wc.keywordFrequency(words), Hash: dht.GenerateKeyHash(rawDoc.Text())}
+	return &PageInfo{Hyperlinks: wc.removeDuplicates(urls), KeywordFrequencies: wc.keywordFrequency(words), Hash: dht_util.GenerateKeyHash(rawDoc.Text())}
 }
 
 // Extracts words from a wikipedia document
@@ -268,7 +276,6 @@ func (wc *Crawler) removeDuplicates(strs []string) []string {
 	return list
 }
 
-// Removes duplicates from the list given as input
 func (wc *Crawler) keywordFrequency(keywords []string) map[string]int {
 	frequencies := make(map[string]int)
 	for _, keyword := range keywords {

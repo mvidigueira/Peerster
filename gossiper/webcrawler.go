@@ -2,6 +2,7 @@ package gossiper
 
 import (
 	"fmt"
+	"github.com/mvidigueira/Peerster/dht_util"
 	"log"
 	"protobuf"
 	"time"
@@ -15,6 +16,8 @@ import (
 func (g *Gossiper) webCrawlerListenerRoutine() {
 	for packet := range g.webCrawler.OutChan {
 		switch {
+		case packet.OutBoundLinks != nil:
+			g.saveOutboundLinksInDHT(packet.OutBoundLinks)
 		case packet.HyperlinkPackage != nil:
 			g.distributeHyperlinks(packet.HyperlinkPackage)
 		case packet.IndexPackage != nil:
@@ -40,7 +43,10 @@ func (g *Gossiper) createUDPBatches(owner *dht.NodeState, items []interface{}) [
 		switch v := item.(type) {
 		case string:
 			itemLength = len(v)
-		case *dht.KeywordToURLMap:
+		case *webcrawler.KeywordToURLMap:
+			bytes, _ := protobuf.Encode(item)
+			itemLength = len(bytes)
+		case *webcrawler.OutBoundLinksPackage:
 			bytes, _ := protobuf.Encode(item)
 			itemLength = len(bytes)
 		default:
@@ -81,18 +87,18 @@ func (g *Gossiper) batchSendURLS(owner *dht.NodeState, hyperlinks []string) {
 	}
 }
 
-func (g *Gossiper) batchSendKeywords(owner *dht.NodeState, items []*dht.KeywordToURLMap) {
+func (g *Gossiper) batchSendKeywords(owner *dht.NodeState, items []*webcrawler.KeywordToURLMap) {
 	s := make([]interface{}, len(items))
 	for i, v := range items {
 		s[i] = v
 	}
 	batches := g.createUDPBatches(owner, s)
 	for _, batch := range batches {
-		tmp := make([]*dht.KeywordToURLMap, len(batch.([]interface{})))
+		tmp := make([]*webcrawler.KeywordToURLMap, len(batch.([]interface{})))
 		for k, b := range batch.([]interface{}) {
-			tmp[k] = b.(*dht.KeywordToURLMap)
+			tmp[k] = b.(*webcrawler.KeywordToURLMap)
 		}
-		packetBytes, err := protobuf.Encode(&dht.BatchMessage{List: tmp})
+		packetBytes, err := protobuf.Encode(&webcrawler.BatchMessage{UrlMapList: tmp})
 		if err != nil {
 			fmt.Println(err)
 			fmt.Printf("Error encoding urlToKeywordMap.\n")
@@ -111,7 +117,7 @@ func (g *Gossiper) distributeHyperlinks(hyperlinkPackage *webcrawler.HyperlinkPa
 	links := hyperlinkPackage.Links
 	domains := map[dht.NodeState][]string{}
 	for _, hyperlink := range links {
-		hash := dht.GenerateKeyHash(hyperlink)
+		hash := dht_util.GenerateKeyHash(hyperlink)
 		closestNodes := g.LookupNodes(hash)
 		if len(closestNodes) == 0 {
 			fmt.Println("LookupNodes returned an empty list... Retrying in 5 seconds.")
@@ -147,25 +153,59 @@ func (g *Gossiper) distributeHyperlinks(hyperlinkPackage *webcrawler.HyperlinkPa
 	}
 }
 
+func (g *Gossiper) saveOutboundLinksInDHT(outboundLinks *webcrawler.OutBoundLinksPackage) {
+	id := dht_util.GenerateKeyHash(outboundLinks.Url)
+	kClosest := g.LookupNodes(id)
+	if len(kClosest) == 0 {
+		fmt.Printf("Could not perform store since no neighbours found.\n")
+		return
+	}
+	closest := kClosest[0]
+
+	s := make([]interface{}, len(outboundLinks.OutBoundLinks))
+	for i, v := range outboundLinks.OutBoundLinks {
+		outBoundLink := &webcrawler.OutBoundLinksPackage{
+			Url: outboundLinks.Url,
+			OutBoundLinks: []string{v},
+		}
+		s[i] = outBoundLink
+	}
+	batches := g.createUDPBatches(closest, s)
+	for _, batch := range batches {
+		tmp := make([]*webcrawler.OutBoundLinksPackage, len(batch.([]interface{})))
+		for k, b := range batch.([]interface{}) {
+			tmp[k] = b.(*webcrawler.OutBoundLinksPackage)
+		}
+		packetBytes, err := protobuf.Encode(&webcrawler.BatchMessage{OutBoundLinksPackages: tmp})
+		if err != nil {
+			panic(err)
+		}
+		err = g.sendStore(closest, id, packetBytes, dht.LinksBucket)
+		if err != nil {
+			fmt.Printf("Failed to store key.\n")
+		}
+	}
+}
+
 // Save each keyword of a url at the responsible node
 func (g *Gossiper) saveKeywordsInDHT(indexPackage *webcrawler.IndexPackage) {
 	frequencies, url := indexPackage.KeywordFrequencies, indexPackage.Url
-	destinations := map[dht.NodeState][]*dht.KeywordToURLMap{}
+	destinations := map[dht.NodeState][]*webcrawler.KeywordToURLMap{}
 	for k, v := range frequencies {
-		keyHash := dht.GenerateKeyHash(k)
+		keyHash := dht_util.GenerateKeyHash(k)
 		kClosest := g.LookupNodes(keyHash)
 		if len(kClosest) == 0 {
 			fmt.Printf("Could not perform store since no neighbours found.\n")
 			break
 		}
 		closest := kClosest[0]
-		urlToKeywordMap := &dht.KeywordToURLMap{
-			Keyword: k,
-			LinkData:        map[string]int{url: v},
+		urlToKeywordMap := &webcrawler.KeywordToURLMap{
+			Keyword:  k,
+			LinkData: map[string]int{url: v},
 		}
 		val, found := destinations[*closest]
 		if !found {
-			destinations[*closest] = []*dht.KeywordToURLMap{
+			destinations[*closest] = []*webcrawler.KeywordToURLMap{
 				urlToKeywordMap,
 			}
 		} else {
@@ -176,7 +216,7 @@ func (g *Gossiper) saveKeywordsInDHT(indexPackage *webcrawler.IndexPackage) {
 	for dest, batch := range destinations {
 		if dest.Address == g.address {
 			// This node is the destination
-			packetBytes, err := protobuf.Encode(&dht.BatchMessage{List: batch})
+			packetBytes, err := protobuf.Encode(&webcrawler.BatchMessage{UrlMapList: batch})
 			if err != nil {
 				fmt.Println(err)
 				return

@@ -2,6 +2,7 @@ package gossiper
 
 import (
 	"fmt"
+	"github.com/mvidigueira/Peerster/dht_util"
 	"log"
 	"math/rand"
 	"net"
@@ -54,7 +55,7 @@ type Gossiper struct {
 
 	blockchainLedger *BlockchainLedger
 
-	dhtMyID      [dht.IDByteSize]byte
+	dhtMyID      [dht_util.IDByteSize]byte
 	dhtChanMap   *dht.ChanMap
 	bucketTable  *bucketTable
 	dhtDb        *dht.Storage

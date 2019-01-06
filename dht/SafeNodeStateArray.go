@@ -2,6 +2,7 @@ package dht
 
 import (
 	"sync"
+	. "github.com/mvidigueira/Peerster/dht_util"
 )
 
 //SafeNodeStateArray - safe array for node states
