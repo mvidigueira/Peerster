@@ -1,19 +1,30 @@
 package dht
 
 import (
+	"crypto/sha1"
+	"encoding/binary"
+	"log"
+
 	"github.com/dedis/protobuf"
 
+	"github.com/mvidigueira/Peerster/bloomfilter"
 	. "github.com/mvidigueira/Peerster/dht_util"
 	"github.com/mvidigueira/Peerster/webcrawler"
 	bolt "go.etcd.io/bbolt"
 )
 
+const queueCountID = "queCount"
+const bloomFilterStateID = "bloomFilter"
+
 const (
-	KeywordsBucket  = "keywords"
-	LinksBucket     = "links"
-	CitationsBucket = "citations"
-	PageHashBucket  = "pageHash"
-	PageRankBucket  = "pageRank"
+	KeywordsBucket    = "keywords"
+	LinksBucket       = "links"
+	CitationsBucket   = "citations"
+	PageHashBucket    = "pageHash"
+	PageRankBucket    = "pageRank"
+	CrawlQueueBucket  = "crawlQueue"
+	QueueIndexBucket  = "queueIndex"
+	BloomFilterBucket = "bloomFilter"
 )
 
 type Storage struct {
@@ -28,7 +39,7 @@ type Storage struct {
 
 func NewStorage(gossiperName string) (s *Storage) {
 	db, err := bolt.Open(gossiperName+"_index.db", 0666, nil)
-	buckets := []string{KeywordsBucket, LinksBucket, PageHashBucket, CitationsBucket, PageRankBucket}
+	buckets := []string{KeywordsBucket, LinksBucket, PageHashBucket, CrawlQueueBucket, QueueIndexBucket, CitationsBucket, PageRankBucket, BloomFilterBucket}
 	if err != nil {
 		panic(err)
 	}
@@ -41,7 +52,21 @@ func NewStorage(gossiperName string) (s *Storage) {
 		}
 		return nil
 	})
+
 	s = &Storage{db}
+
+	// Initiates the crawl queue head pointer if not already present in the database
+	keyHash := GenerateKeyHash(queueCountID)
+	_, found := s.Retrieve(keyHash, "queueIndex")
+	if !found {
+		err := db.Update(func(tx *bolt.Tx) error {
+			b := tx.Bucket([]byte("queueIndex"))
+			return b.Put(keyHash[:], Itob(0))
+		})
+		if err != nil {
+			log.Fatal("Failed to initiate queue")
+		}
+	}
 	return
 }
 
@@ -138,4 +163,108 @@ func (s *Storage) BulkAddLinksForKeyword(urlMaps []*webcrawler.KeywordToURLMap) 
 		ok = false
 	}
 	return
+}
+
+func (s Storage) Put(key TypeID, data []byte, bucket string) (err error) {
+	err = s.Db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucket))
+		err = b.Put(key[:], data)
+		return err
+	})
+	return err
+}
+
+func (s Storage) Delete(key TypeID, bucket string) (err error) {
+	err = s.Db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucket))
+		err = b.Delete(key[:])
+		return err
+	})
+	return err
+}
+
+func (s Storage) UpdateQueue(data []byte) (err error) {
+	err = s.Db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte("crawlQueue"))
+		id, _ := b.NextSequence()
+		newURLHash := sha1.Sum(Itob(int(id) - 1))
+		err = b.Put(newURLHash[:], data)
+		return err
+	})
+	return err
+}
+
+func (s Storage) GetQueueIndex() (uint64, bool) {
+	queueHash := GenerateKeyHash(queueCountID)
+	val, found := s.Retrieve(queueHash, "queueIndex")
+	if !found {
+		log.Fatal("Error, sequence number not found.")
+	}
+	queue := binary.BigEndian.Uint64(val)
+	return queue, found
+}
+
+func (s Storage) CrawlQueueHead() string {
+
+	// Get sequence number of queue head
+	queueHash := GenerateKeyHash(queueCountID)
+	val, found := s.Retrieve(queueHash, "queueIndex")
+	if !found {
+		log.Fatal("Error, queue head sequence number not found")
+	}
+	headSequenceNumber := binary.BigEndian.Uint64(val)
+
+	// Get head of queue
+	newURLHash := sha1.Sum(Itob(int(headSequenceNumber)))
+	head, found := s.Retrieve(newURLHash, "crawlQueue")
+	if !found {
+		log.Fatal("Error, Could not find of queue.")
+	}
+
+	// Update pointer to head of queue
+	err := s.Put(queueHash, Itob(int(headSequenceNumber)+1), "queueIndex")
+	if err != nil {
+		log.Fatal("Error, updating queue head sequence number")
+	}
+
+	return string(head)
+}
+
+func (s Storage) SaveBloomFilter(bloomFilter *bloomfilter.BloomFilter) {
+	bytes, err := protobuf.Encode(bloomFilter)
+	if err != nil {
+		log.Fatal("Error, decoding bloom filter.")
+	}
+	key := GenerateKeyHash(bloomFilterStateID)
+	s.Put(key, bytes, bloomFilterStateID)
+}
+
+func (s Storage) GetBloomFilter() *bloomfilter.BloomFilter {
+	// Restore bloom filter
+	bloomFilterHash := GenerateKeyHash(bloomFilterStateID)
+	bloomFilterBytes, found := s.Retrieve(bloomFilterHash, bloomFilterStateID)
+	if !found {
+		log.Println("Could not find bloom filter.")
+	}
+	bloomFilter := &bloomfilter.BloomFilter{}
+	err := protobuf.Decode(bloomFilterBytes, bloomFilter)
+	if err != nil {
+		log.Fatal("error decoign bloom filter")
+	}
+	return bloomFilter
+}
+
+func (s Storage) DeleteCrawlHead() error {
+	index, found := s.GetQueueIndex()
+	if !found {
+		log.Println("queue index not found.")
+	}
+	newURLHash := sha1.Sum(Itob(int(index) - 1))
+	return s.Delete(newURLHash, "crawlQueue")
+}
+
+func Itob(v int) []byte {
+	b := make([]byte, 8)
+	binary.BigEndian.PutUint64(b, uint64(v))
+	return b
 }

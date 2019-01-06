@@ -192,7 +192,7 @@ func (g *Gossiper) Start() {
 	}
 
 	go g.webCrawlerListenerRoutine()
-	g.webCrawler.Start()
+	g.startCrawler()
 
 	g.receiveClientUDP(cUI, cUIPM, cFileShare, cFileDL, cFileSearch, cCliDHT)
 }
@@ -384,8 +384,16 @@ func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, c
 				cDHT <- pap
 			}
 		case "hyperlinkmessage":
-			g.webCrawler.InChan <- &webcrawler.CrawlerPacket{
-				HyperlinkPackage: packet.HyperlinkMessage,
+			for _, link := range packet.HyperlinkMessage.Links {
+				err := g.dhtDb.UpdateQueue([]byte(link))
+				if err != nil {
+					log.Fatal("Error saving link")
+				}
+			}
+			if !g.webCrawler.IsCrawling {
+				g.webCrawler.OutChan <- &webcrawler.CrawlerPacket{
+					Done: &webcrawler.DoneCrawl{Delete: false},
+				}
 			}
 		case "encryptedhyperlinkmessage":
 			go func() {

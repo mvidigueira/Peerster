@@ -10,6 +10,8 @@ import (
 
 const uint64Size = 64
 
+var HashFunctions = []hash.Hash64{fnv.New64(), fnv.New64a(), murmur3.New64()}
+
 type BloomFilter struct {
 	bitset        []uint64
 	k             uint64

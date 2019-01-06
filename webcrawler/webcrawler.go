@@ -12,6 +12,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mvidigueira/Peerster/bloomfilter"
+	"github.com/mvidigueira/Peerster/dht_util"
+
 	"github.com/mvidigueira/Peerster/dht_util"
 
 	"github.com/PuerkitoBio/goquery"
@@ -30,11 +33,14 @@ type Crawler struct {
 	leader     bool
 	hasher     hash.Hash64
 	past       map[string]bool
+	NextCrawl  chan string
+	IsCrawling bool
 }
 
 // PUBLIC API
 
 func New(leader bool) *Crawler {
+	bf := bloomfilter.New(3, 10e6)
 	return &Crawler{
 		crawlQueue: []string{},
 		mux:        &sync.Mutex{},
@@ -45,6 +51,8 @@ func New(leader bool) *Crawler {
 		leader:     leader,
 		hasher:     fnv.New64(),
 		past:       map[string]bool{},
+		NextCrawl:  make(chan string),
+		IsCrawling: false,
 	}
 }
 
@@ -52,15 +60,19 @@ func (wc *Crawler) Start() {
 
 	fmt.Println("Starting crawl...")
 	go wc.crawl()
-	go wc.listenToQueueUpdate()
 
-	if wc.leader {
+	/*if wc.leader {
 		wc.InChan <- &CrawlerPacket{
 			HyperlinkPackage: &HyperlinkPackage{
 				Links: []string{"/wiki/Outline_of_academic_disciplines"},
 			},
 		}
+	}*/
+	if bloomFilter != nil {
+		wc.bloomFilter = bloomFilter
 	}
+	go wc.crawl()
+	//go wc.listenToQueueUpdate()
 }
 
 // PRIVATE METHODS
@@ -72,12 +84,9 @@ func (wc *Crawler) crawl() {
 	go func() {
 		for {
 			select {
-			case <-ticker.C:
-				if len(wc.crawlQueue) == 0 {
-					continue
-				}
-				// Get next page to crawl
-				nextPage := wc.popQueue()
+			case nextPage := <-wc.NextCrawl:
+
+				wc.IsCrawling = true
 
 				page := wc.crawlUrl(nextPage)
 				if page == nil {
@@ -106,6 +115,9 @@ func (wc *Crawler) crawl() {
 				found := <-resChan
 				if found {
 					fmt.Printf("Page has already been crawled, skipping.\n")
+					wc.OutChan <- &CrawlerPacket{
+						Done: &DoneCrawl{Delete: true},
+					}
 					continue
 				}
 
@@ -138,6 +150,13 @@ func (wc *Crawler) crawl() {
 					}
 				}
 
+				// backup bloom filter
+				wc.OutChan <- &CrawlerPacket{
+					BloomFilterPackage: &BloomFilterPackage{
+						Filter: wc.bloomFilter,
+					},
+				}
+
 				// Send the links found on the page to be distributed evenly between the availible crawlers
 				wc.OutChan <- &CrawlerPacket{
 					HyperlinkPackage: &HyperlinkPackage{
@@ -160,13 +179,17 @@ func (wc *Crawler) crawl() {
 						Url:                nextPage,
 					},
 				}
+
+				wc.OutChan <- &CrawlerPacket{
+					Done: &DoneCrawl{Delete: true},
+				}
 			}
 		}
 	}()
 }
 
 // Listen to crawler queue updates from other nodes
-func (wc *Crawler) listenToQueueUpdate() {
+/*func (wc *Crawler) listenToQueueUpdate() {
 	go func() {
 		for {
 			select {
@@ -180,7 +203,7 @@ func (wc *Crawler) listenToQueueUpdate() {
 			}
 		}
 	}()
-}
+}*/
 
 // Crawls a url
 func (wc *Crawler) crawlUrl(urlString string) *PageInfo {

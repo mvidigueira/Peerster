@@ -2,9 +2,10 @@ package gossiper
 
 import (
 	"fmt"
-	"github.com/dedis/protobuf"
 	"log"
 	"time"
+
+	"github.com/dedis/protobuf"
 
 	"github.com/mvidigueira/Peerster/dht_util"
 	"github.com/mvidigueira/Peerster/diffie_hellman/aesencryptor"
@@ -13,6 +14,45 @@ import (
 	"github.com/mvidigueira/Peerster/dto"
 	"github.com/mvidigueira/Peerster/webcrawler"
 )
+
+func (g *Gossiper) startCrawler() {
+
+	queue, ok := g.dhtDb.GetQueueIndex()
+	if !ok {
+		log.Fatal("Queue index not found.")
+	}
+	if queue == 0 {
+		g.initiateFreshCrawl()
+		return
+	}
+	g.initiateAndRestoreCrawl()
+}
+
+func (g *Gossiper) initiateFreshCrawl() {
+	// Fresh start of crawl, initiate queue from start point if leader.
+	g.webCrawler.Start(nil)
+	if g.webCrawler.Leader {
+		err := g.dhtDb.UpdateQueue([]byte("/wiki/Swedish_Empire"))
+		if err != nil {
+			log.Fatal("Error saving root url.")
+		}
+		g.webCrawler.OutChan <- &webcrawler.CrawlerPacket{
+			Done: &webcrawler.DoneCrawl{Delete: false},
+		}
+	}
+}
+
+func (g *Gossiper) initiateAndRestoreCrawl() {
+
+	// Restore bloom filter
+	bloomFilter := g.dhtDb.GetBloomFilter()
+
+	g.webCrawler.Start(bloomFilter)
+
+	g.webCrawler.OutChan <- &webcrawler.CrawlerPacket{
+		Done: &webcrawler.DoneCrawl{Delete: false},
+	}
+}
 
 //webCrawlerListenRouting - deals with indexing of webpages and hyperlink distribution
 func (g *Gossiper) webCrawlerListenerRoutine() {
@@ -43,6 +83,18 @@ func (g *Gossiper) webCrawlerListenerRoutine() {
 				_, found := g.LookupValue(pageHash.Hash, dht.PageHashBucket)
 				packet.ResChan <- found
 			}(packet.PageHash)
+		case packet.BloomFilterPackage != nil:
+			g.dhtDb.SaveBloomFilter(packet.BloomFilterPackage.Filter)
+		case packet.Done != nil:
+			// Crawl of page done, get new url from db and feed it to crawler.
+			if packet.Done.Delete {
+				err := g.dhtDb.DeleteCrawlHead()
+				if err != nil {
+					log.Fatal("Error, deleting crawl queue head.")
+				}
+			}
+			head := g.dhtDb.CrawlQueueHead()
+			g.webCrawler.NextCrawl <- head
 		}
 	}
 }
@@ -208,10 +260,11 @@ func (g *Gossiper) distributeHyperlinks(packet *webcrawler.HyperlinkPackage) {
 	for owner, hyperlinks := range domains {
 		if owner.Address == g.address {
 			// Send back the urls belonging to this nodes domain
-			g.webCrawler.InChan <- &webcrawler.CrawlerPacket{
-				HyperlinkPackage: &webcrawler.HyperlinkPackage{
-					Links: hyperlinks,
-				},
+			for _, link := range hyperlinks {
+				err := g.dhtDb.UpdateQueue([]byte(link))
+				if err != nil {
+					log.Fatal("Error saving link")
+				}
 			}
 		} else {
 			// Url belong to another crawlers domain.
