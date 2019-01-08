@@ -5,11 +5,18 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/gorilla/mux"
+	"log"
 	"net"
 	"net/http"
+	"os"
+	"os/signal"
+	"os/user"
+	"path/filepath"
 	"protobuf"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mvidigueira/Peerster/dto"
 	"github.com/mvidigueira/Peerster/fileparsing"
@@ -18,6 +25,9 @@ import (
 
 var g *gossiper.Gossiper
 var uiport string
+
+const selfDir = "/go/src/github.com/mvidigueira/Peerster"
+
 
 func main() {
 	UIPort := flag.String("UIPort", "8080", "Port for the UI client (default \"8080\")")
@@ -40,9 +50,12 @@ func main() {
 
 	go g.Start()
 
+	usr, _ := user.Current()
+	path := filepath.Join(usr.HomeDir, selfDir, "/frontend")
+
 	//frontend
 
-	http.Handle("/", http.FileServer(http.Dir("./frontend")))
+	http.Handle("/", http.FileServer(http.Dir(path)))
 	http.HandleFunc("/message", messageHandler)
 	http.HandleFunc("/node", nodeHandler)
 	http.HandleFunc("/id", idHandler)
@@ -55,10 +68,38 @@ func main() {
 
 	http.HandleFunc("/searchfile", searchFileHandler)
 	http.HandleFunc("/searchmatches", matchesFoundHandler)
-	for {
-		err := http.ListenAndServe("localhost:"+*UIPort, nil)
+	go http.ListenAndServe("localhost:"+*UIPort, nil)
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt)
+
+	searchRouter := mux.NewRouter()
+	path = filepath.Join(usr.HomeDir, selfDir, "/search_frontend")
+
+	searchRouter.Handle("/", http.FileServer(http.Dir(path)))
+	searchRouter.Path("/search").Queries("query", "{query}").Methods("GET").HandlerFunc(searchHandler)
+	srv := &http.Server{
+		Handler:      searchRouter,
+		Addr:         "localhost:8080",
+		WriteTimeout: 10 * time.Second,
+		ReadTimeout:  10 * time.Second,
+	}
+	go srv.ListenAndServe()
+	log.Println("SERVING SEARCH")
+	<-stop
+}
+
+func searchHandler(w http.ResponseWriter, r *http.Request) {
+	query := r.FormValue("query")
+	log.Println(query)
+	results := g.DoSearch(string(query))
+	resultsJSON, err := json.Marshal(results)
+	if err != nil {
 		panic(err)
 	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(resultsJSON)
 }
 
 func messageHandler(w http.ResponseWriter, r *http.Request) {
