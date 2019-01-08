@@ -14,6 +14,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"protobuf"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"time"
@@ -38,8 +39,18 @@ func main() {
 	simple := flag.Bool("simple", false, "run gossiper in simple broadcast mode")
 	bootstrap := flag.String("boot", "", "peer of the form ip:port that is used to join the dht network")
 	crawlLeader := flag.Bool("crawlLeader", false, "initiator of the crawl")
+	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to file")
 
 	flag.Parse()
+
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
 
 	uiport = *UIPort
 	peers := make([]string, 0)
