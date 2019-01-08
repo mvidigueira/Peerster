@@ -115,17 +115,22 @@ func (g *Gossiper) replyStore(msg *dht.Message) {
 			}
 		}
 	case dht.PageHashBucket:
+		var err error
 		g.dhtDb.Db.Update(func(tx *bbolt.Tx) error {
 			b := tx.Bucket([]byte(storeType))
-			err := b.Put(msg.Store.Key[:], msg.Store.Data)
-			if err != nil {
-				panic(err)
-			}
-			return nil
+			err = b.Put(msg.Store.Key[:], msg.Store.Data)
+			return err
 		})
+		if err != nil {
+			log.Fatal(err)
+		}
+
 	case dht.LinksBucket:
 		batchTemp := &webcrawler.BatchMessage{}
-		protobuf.Decode(msg.Store.Data, batchTemp)
+		err := protobuf.Decode(msg.Store.Data, batchTemp)
+		if err != nil {
+			panic(err)
+		}
 		var links []string
 		for _, item := range batchTemp.OutBoundLinksPackages {
 			stores++
@@ -138,12 +143,51 @@ func (g *Gossiper) replyStore(msg *dht.Message) {
 			oldPackage := &webcrawler.OutBoundLinksPackage{batchTemp.OutBoundLinksPackages[0].Url, links}
 			data, err := protobuf.Encode(oldPackage)
 			err = b.Put(id, data)
-			if err != nil {
-				panic(err)
+			return err
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+
+	case dht.CitationsBucket:
+		batchTemp := &webcrawler.BatchMessage{}
+		err := protobuf.Decode(msg.Store.Data, batchTemp)
+		if err != nil {
+			panic(err)
+		}
+		g.dhtDb.Db.Update(func(tx *bbolt.Tx) error {
+			b := tx.Bucket([]byte(dht.CitationsBucket))
+
+			itemLoop: for _, item := range batchTemp.Citations {
+				idArray := dht_util.GenerateKeyHash(item.Url)
+				id := idArray[:]
+				oldCitationsData := b.Get(id)
+				oldCitations := &webcrawler.Citations{}
+				if oldCitationsData != nil {
+					err = protobuf.Decode(oldCitationsData, oldCitations)
+					if err != nil {
+						return err
+					}
+					for _, citation := range oldCitations.CitedBy {
+						if citation == item.CitedBy[0] {
+							continue itemLoop
+						}
+					}
+				}else {
+					oldCitations.Url = item.Url
+				}
+				oldCitations.CitedBy = append(oldCitations.CitedBy, item.CitedBy...)
+				data, err := protobuf.Encode(oldCitations)
+				err = b.Put(id, data)
+				if err != nil {
+					return err
+				}
 			}
 			return nil
 		})
-
+		if err != nil {
+			log.Fatal(err)
+		}
 	default:
 		fmt.Printf("Unknown store type: %s.", storeType)
 	}
@@ -232,7 +276,7 @@ func (g *Gossiper) dhtMessageListenRoutine(cDHTMessage chan *dto.PacketAddressPa
 			g.dhtChanMap.InformListener(msg.Nonce, msg)
 		case dht.ValueReplyT:
 			if msg.ValueReply.Data != nil {
-				fmt.Printf("VALUE REPLY with data: %x from %x\n", *msg.ValueReply.Data, msg.SenderID)
+				//fmt.Printf("VALUE REPLY with data: %x from %x\n", *msg.ValueReply.Data, msg.SenderID)
 			} else {
 				fmt.Printf("VALUE REPLY with results %s from %x\n", dht.String(*msg.ValueReply.NodeStates), msg.SenderID)
 			}
@@ -284,6 +328,65 @@ func (g *Gossiper) lookupWord(token string) (urlMap *webcrawler.KeywordToURLMap)
 	return
 }
 
+const MaxResults  = 10
+
+func (g *Gossiper) DoSearch(query string) (rankedResults webcrawler.RankedResults){
+	log.Printf("Starting lookup for %s \n", query)
+
+	tokens := strings.Split(query, " ")
+	if len(tokens) < 0 {
+		return
+	}
+	var numberOfDocuments int //TODO: we should improve this estimate
+
+	g.dhtDb.Db.View(func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte(dht.KeywordsBucket))
+		stats := b.Stats()
+		numberOfDocuments = stats.KeyN
+		return nil
+	})
+
+	newResults := g.lookupWord(tokens[0])
+	if newResults == nil {
+		log.Printf("TERM %s NOT FOUND \n", tokens[0])
+		return
+	}
+	results := webcrawler.NewSearchResults(newResults, numberOfDocuments)
+	sort.Sort(results)
+	for _, t := range tokens[1:] {
+		newResults = g.lookupWord(t)
+		if newResults != nil {
+			results = webcrawler.Join(results, newResults)
+		}
+	}
+	sort.Sort(results)
+
+	maxResults := len(results.Results)
+	if maxResults > MaxResults {
+		maxResults = MaxResults
+	}
+	for _, result := range results.Results[:maxResults] {
+		data, found := g.LookupValue(dht_util.GenerateKeyHash(result.Link), dht.CitationsBucket)
+		rank := 0.0
+		if found {
+			citations := &webcrawler.Citations{}
+			err := protobuf.Decode(data, citations)
+			if err != nil {
+				panic(err)
+			}
+			rank = 0.1*float64(len(citations.CitedBy)) //TODO: this is a dummy
+		}
+		rank += 0.9*result.SimScore
+		result := result //make a copy
+		rankedResults.Results = append(rankedResults.Results, webcrawler.RankedResult{&result, rank})
+	}
+	sort.Sort(rankedResults)
+	for _, result := range rankedResults.Results {
+		log.Printf("RESULT: %s, (%.2f)\n", result.Result.Link, result.Rank)
+	}
+	return
+}
+
 func (g *Gossiper) clientDHTListenRoutine(cCliDHT chan *dto.DHTRequest) {
 	for request := range cCliDHT {
 		switch {
@@ -299,32 +402,7 @@ func (g *Gossiper) clientDHTListenRoutine(cCliDHT chan *dto.DHTRequest) {
 				}
 				fmt.Printf("Closest DHT nodes found: %s\n", strings.Join(nodes, ", "))
 			} else {
-				log.Printf("Starting lookup for %s \n", *lookup.Key)
-
-				tokens := strings.Split(*lookup.Key, " ")
-				if len(tokens) < 0 {
-					continue
-				}
-				var numberOfDocuments int //TODO: we should improve this estimate
-
-				g.dhtDb.Db.View(func(tx *bbolt.Tx) error {
-					b := tx.Bucket([]byte(dht.KeywordsBucket))
-					stats := b.Stats()
-					numberOfDocuments = stats.KeyN
-					return nil
-				})
-
-				results := webcrawler.NewSearchResults(g.lookupWord(tokens[0]), numberOfDocuments)
-				sort.Sort(results)
-				for _, t := range tokens[1:] {
-					newResults := g.lookupWord(t)
-					if newResults != nil {
-						results = webcrawler.Join(results, newResults)
-					}
-				}
-				for _, result := range results.Results {
-					log.Printf("RESULT: %s, (%.2f)\n", result.Link, result.TdIdf)
-				}
+				g.DoSearch(*lookup.Key)
 			}
 		case request.Store != nil:
 			storeReq := request.Store
