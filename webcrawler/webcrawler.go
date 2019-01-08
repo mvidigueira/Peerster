@@ -53,7 +53,7 @@ func (wc *Crawler) Start() {
 	if wc.leader {
 		wc.InChan <- &CrawlerPacket{
 			HyperlinkPackage: &HyperlinkPackage{
-				Links: []string{"/wiki/Swedish_Empire"},
+				Links: []string{"/wiki/World_War_II"},
 			},
 		}
 	}
@@ -101,6 +101,16 @@ func (wc *Crawler) crawl() {
 						Url: nextPage,
 						OutBoundLinks: page.Hyperlinks,
 					},
+				}
+
+				citationsPackage := &CitationsPackage{}
+				for _, link := range page.Hyperlinks {
+					citationsPackage.CitationsList = append(citationsPackage.CitationsList, Citations{link, []string{nextPage}})
+				}
+
+				//Store the pages being cited by this page
+				wc.OutChan <- &CrawlerPacket{
+					CitationsPackage: citationsPackage,
 				}
 
 				// Filter out urls that already has been crawler by this crawler
@@ -207,11 +217,10 @@ func (wc *Crawler) extractWords(doc goquery.Document) []string {
 // Extracts local hyperlinks (links that does not point towards other domains than wikipedia)
 func (wc *Crawler) extractHyperLinks(doc goquery.Document, host string) []string {
 	urls := []string{}
-
+	validURL := regexp.MustCompile(`^[a-zA-Z/_]+$`)
 	doc.Find("a").Each(func(i int, el *goquery.Selection) {
 		href, exists := el.Attr("href")
 		if exists {
-			validURL := regexp.MustCompile(`^[a-zA-Z/_]+$`)
 			if href[0] != '/' || !validURL.MatchString(href) {
 				return
 			}

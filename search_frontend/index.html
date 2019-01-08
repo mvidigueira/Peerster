@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <!-- Required meta tags -->
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+        <!-- Bootstrap CSS -->
+        <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css" integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous">
+        <style>
+                .jumbotron{
+                    background-color:#2E2D88;
+                    color:white;
+                }
+                /* Adds borders for tabs */
+                .tab-content {
+                    border-left: 1px solid #ddd;
+                    border-right: 1px solid #ddd;
+                    border-bottom: 1px solid #ddd;
+                    padding: 10px;
+                }
+                .nav-tabs {
+                    margin-bottom: 0;
+                }
+                .table-wrapper-scroll-y {
+                    display: block;
+                    max-height: 400px;
+                    overflow-y: auto;
+                    -ms-overflow-style: -ms-autohiding-scrollbar;
+                }
+        </style>
+
+        <script src="https://code.jquery.com/jquery-3.3.1.min.js" crossorigin="anonymous"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.3/umd/popper.min.js" integrity="sha384-ZMP7rVo3mIykV+2+9J3UJ46jBk0WLaUAdn689aCwoqbBJiSnjAK/l8WvCWPIPm49" crossorigin="anonymous"></script>
+        <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js" integrity="sha384-ChfqqxuZUCnJSK3+MXmPNIyE6ZbWh2IMqE241rYiqJxyMiZ6OW/JmZQ5stwEULTy" crossorigin="anonymous"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-table/1.12.1/bootstrap-table.min.js"></script>
+
+        <script src="/peerster.js"></script>
+    </head>
+    <body>
+        
+        <div class="container" >
+            <div class="page-header">
+                <h1 id="nodeName" class="text-center">Peerster Client User Interface</h1>
+            </div>
+            <div class="row">
+                <div class="col-md-9">
+                    <h3>Message List</h3>
+                    <div class="table-wrapper-scroll-y" >
+                        <table data-toggle="table" id="msgTable" data-url='/message'>
+                                <thead>
+                                    <tr>
+                                        <th data-field="Text">Text</th>
+                                        <th data-field="Origin">Origin</th>
+                                        <th data-field="Type">Type</th>
+                                    </tr>
+                                </thead>
+                        </table>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <h3>Peers List</h3>
+                    <div class="table-wrapper-scroll-y">
+                        <table data-toggle="table" id="peerTable" data-url='/node'>
+                                <thead>
+                                    <tr>
+                                        <th data-field="Name">Peer Address</th>
+                                    </tr>
+                                </thead>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+
+            <form id="nodeForm" action="/node" method="POST">
+                <label for="peerAdress">New peer adress</label>
+                <div class="row">
+                    <div class="col-md-7">
+                        <div class="form-group">
+                            <input type="text" class="form-control" id="peerAdress" placeholder="127.0.0.1:10000">
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-primary">Add</button>
+                    </div>
+                </div>
+            </form>
+            <form id="msgForm" action="/message" method="POST">
+                <label for="messageArea">New Gossip Message:</label>
+                <div class="row">
+                    <div class="col-md-7">
+                        <div class="form-group">
+                            <textarea class="form-control" id="messageText" rows="1"></textarea>
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-primary">Send</button>
+                    </div>
+                </div>
+            </form>
+            <form id="privateMsgForm" action="/privatemessage" method="POST">
+                <div class="row">
+                    <div class="col-md-4">
+                        <label for="privateMessageText">New Private Message:</label>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="pmDestination">Available Destinations:</label>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <textarea class="form-control" id="privateMessageText" rows="1"></textarea>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <select class="form-control" id="pmDestination"></select>
+                        </div> 
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-primary">Send</button>
+                    </div>
+                </div>
+            </form>
+            
+            <form id="fileSharingForm" action="/sharefile" method="POST">
+                <label for="shareFile">Share file</label>
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <input type="file" class="form-control-file" id="shareFile">
+                        </div> 
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-primary">Share</button>
+                    </div>
+                </div>
+            </form>
+            <label >Download file from specific node</label>
+            <form id="fileDownloadingForm" action="/dlfile" method="POST">
+                <div class="row">
+                    <div class="col-md-4">
+                        <label for="dlFileHash">Metahash value:</label>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="dlFileFrom">From:</label>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="dlFileName">Save As:</label>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <textarea class="form-control" id="dlFileHash" rows="1"></textarea>
+                        </div> 
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <select class="form-control" id="dlFileFrom"></select>
+                        </div> 
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <textarea class="form-control" id="dlFileName" rows="1"></textarea>
+                        </div> 
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-primary">Download</button>
+                    </div>
+                </div>
+            </form>
+            <label >Search file</label>
+            <form id="fileSearchingForm" action="/searchfile" method="POST">
+                <div class="row">
+                    <div class="col-md-4">
+                        <label for="srchKeywords">Comma separated keywords (space sensitive):</label>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="srchBudget">Budget (0 is expanding ring):</label>
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="form-group">
+                            <textarea class="form-control" id="srchKeywords" rows="1" placeholder="cate,doge"></textarea>
+                        </div> 
+                    </div>
+                    <div class="col-md-3">
+                        <div class="form-group">
+                            <input type="text" class="form-control" id="srchBudget"></input>
+                        </div> 
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-primary">Search</button>
+                    </div>
+                </div>
+            </form>
+            <div class="col-md-9">
+                <h3>Files List</h3>
+                <div class="table-wrapper-scroll-y" >
+                    <table data-toggle="table" id="filesTable" data-url='/searchmatches'>
+                            <thead>
+                                <tr>
+                                    <th data-field="Filename">Filename</th>
+                                    <th data-field="Metahash">Metahash</th>
+                                </tr>
+                            </thead>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </body>
+</html>
+

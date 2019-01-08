@@ -7,13 +7,14 @@ import (
 type CrawlerPacket struct {
 	HyperlinkPackage *HyperlinkPackage
 	OutBoundLinks    *OutBoundLinksPackage
+	CitationsPackage *CitationsPackage
 	IndexPackage     *IndexPackage
 	PageHash         *PageHashPackage
 	ResChan          chan bool
 }
 
 type KeywordToURLMap struct {
-	Keyword string
+	Keyword  string
 	LinkData map[string]int //url:keywordOccurrences
 }
 
@@ -21,6 +22,7 @@ type KeywordToURLMap struct {
 type BatchMessage struct {
 	UrlMapList            []*KeywordToURLMap
 	OutBoundLinksPackages []*OutBoundLinksPackage
+	Citations             []*Citations
 }
 
 type HyperlinkPackage struct {
@@ -28,8 +30,17 @@ type HyperlinkPackage struct {
 }
 
 type OutBoundLinksPackage struct {
-	Url string
+	Url           string
 	OutBoundLinks []string
+}
+
+type Citations struct {
+	Url     string
+	CitedBy []string
+}
+
+type CitationsPackage struct {
+	CitationsList []Citations
 }
 
 type IndexPackage struct {

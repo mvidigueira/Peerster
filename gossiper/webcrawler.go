@@ -3,7 +3,6 @@ package gossiper
 import (
 	"fmt"
 	"github.com/mvidigueira/Peerster/dht_util"
-	"log"
 	"protobuf"
 	"time"
 
@@ -18,6 +17,8 @@ func (g *Gossiper) webCrawlerListenerRoutine() {
 		switch {
 		case packet.OutBoundLinks != nil:
 			g.saveOutboundLinksInDHT(packet.OutBoundLinks)
+		case packet.CitationsPackage != nil:
+			g.saveCitationsInDHT(packet.CitationsPackage)
 		case packet.HyperlinkPackage != nil:
 			g.distributeHyperlinks(packet.HyperlinkPackage)
 		case packet.IndexPackage != nil:
@@ -40,7 +41,7 @@ func (g *Gossiper) createUDPBatches(owner *dht.NodeState, items []interface{}) [
 	batches := make([]interface{}, 0, 1)
 	for _, item := range items {
 		var itemLength int
-		switch v := item.(type) {
+		switch v := item.(type) { //TODO: fixme
 		case string:
 			itemLength = len(v)
 		case *webcrawler.KeywordToURLMap:
@@ -49,8 +50,11 @@ func (g *Gossiper) createUDPBatches(owner *dht.NodeState, items []interface{}) [
 		case *webcrawler.OutBoundLinksPackage:
 			bytes, _ := protobuf.Encode(item)
 			itemLength = len(bytes)
+		case *webcrawler.Citations:
+			bytes, _ := protobuf.Encode(item)
+			itemLength = len(bytes)
 		default:
-			log.Fatal("invalid interface type")
+			panic("invalid interface type")
 		}
 		if packetSize+itemLength < udpMaxSize {
 			packetSize += itemLength
@@ -105,6 +109,28 @@ func (g *Gossiper) batchSendKeywords(owner *dht.NodeState, items []*webcrawler.K
 			break
 		}
 		err = g.sendStore(owner, [20]byte{}, packetBytes, dht.KeywordsBucket)
+		if err != nil {
+			fmt.Printf("Failed to store key.\n")
+		}
+	}
+}
+
+func (g *Gossiper) batchSendCitations(owner *dht.NodeState, items []*webcrawler.Citations) {
+	s := make([]interface{}, len(items))
+	for i, v := range items {
+		s[i] = v
+	}
+	batches := g.createUDPBatches(owner, s)
+	for _, batch := range batches {
+		tmp := make([]*webcrawler.Citations, len(batch.([]interface{})))
+		for k, b := range batch.([]interface{}) {
+			tmp[k] = b.(*webcrawler.Citations)
+		}
+		packetBytes, err := protobuf.Encode(&webcrawler.BatchMessage{Citations: tmp})
+		if err != nil {
+			panic(err)
+		}
+		err = g.sendStore(owner, [20]byte{}, packetBytes, dht.CitationsBucket)
 		if err != nil {
 			fmt.Printf("Failed to store key.\n")
 		}
@@ -184,6 +210,37 @@ func (g *Gossiper) saveOutboundLinksInDHT(outboundLinks *webcrawler.OutBoundLink
 		if err != nil {
 			fmt.Printf("Failed to store key.\n")
 		}
+	}
+}
+
+func (g *Gossiper) saveCitationsInDHT(citationsPackage *webcrawler.CitationsPackage){
+	destinations := make(map[dht.NodeState][]*webcrawler.Citations)
+	for _, citation := range citationsPackage.CitationsList {
+		citation := citation //create a copy of the variable
+		id := dht_util.GenerateKeyHash(citation.Url)
+		kClosest := g.LookupNodes(id)
+		if len(kClosest) == 0 {
+			fmt.Printf("Could not perform store since no neighbours found.\n")
+			break
+		}
+		closest := kClosest[0]
+		val, _ := destinations[*closest]
+		destinations[*closest] = append(val, &citation)
+	}
+
+	for dest, batch := range destinations {
+		if dest.Address == g.address {
+			// This node is the destination
+			packetBytes, err := protobuf.Encode(&webcrawler.BatchMessage{Citations: batch})
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			msg := g.newDHTStore(dest.NodeID, packetBytes, dht.CitationsBucket)
+			g.replyStore(msg)
+			continue
+		}
+		g.batchSendCitations(&dest, batch)
 	}
 }
 
