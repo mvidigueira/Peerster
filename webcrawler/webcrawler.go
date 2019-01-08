@@ -75,6 +75,10 @@ func (wc *Crawler) crawl() {
 				nextPage := wc.popQueue()
 
 				page := wc.crawlUrl(nextPage)
+				if page == nil {
+					wc.updateQueue([]string{nextPage})
+					continue
+				}
 
 				fmt.Printf("Crawled %s, found %d hyperlinks and %d keywords.\n", nextPage, len(page.Hyperlinks), len(page.KeywordFrequencies))
 
@@ -171,6 +175,9 @@ func (wc *Crawler) crawlUrl(urlString string) *PageInfo {
 	u, _ := url.ParseRequestURI(urlString)
 
 	rawDoc := wc.getPage(urlString)
+	if rawDoc == nil {
+		return nil
+	}
 
 	doc := wc.cleanPage(*rawDoc)
 
