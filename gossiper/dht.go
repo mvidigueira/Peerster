@@ -2,18 +2,21 @@ package gossiper
 
 import (
 	"fmt"
+
 	"github.com/dedis/protobuf"
+
+	"github.com/mvidigueira/Peerster/dht_util"
+	"github.com/mvidigueira/Peerster/webcrawler"
+	"github.com/reiver/go-porterstemmer"
+	"go.etcd.io/bbolt"
+
 	"log"
 	"math/rand"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/mvidigueira/Peerster/dht_util"
 	"github.com/mvidigueira/Peerster/diffie_hellman/aesencryptor"
-	"github.com/mvidigueira/Peerster/webcrawler"
-	"github.com/reiver/go-porterstemmer"
-	"go.etcd.io/bbolt"
 
 	"github.com/mvidigueira/Peerster/dht"
 	"github.com/mvidigueira/Peerster/dto"
