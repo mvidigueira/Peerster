@@ -98,7 +98,11 @@ func (g *Gossiper) setRank(urlInfo *webcrawler.OutBoundLinksPackage, pageInfo *R
 		return nil
 	})
 
-	for _, outboundLink := range urlInfo.OutBoundLinks[:10] { //TODO: remove this debug bound
+	bound := 10
+	if len(urlInfo.OutBoundLinks) < 10 {
+		bound = len(urlInfo.OutBoundLinks)
+	}
+	for _, outboundLink := range urlInfo.OutBoundLinks[:bound] { //TODO: remove this debug bound
 		id = dht_util.GenerateKeyHash(outboundLink)
 		rankUpdate := &RankUpdate{OutboundLink:outboundLink, RankInfo: pageInfo}
 		data, err := protobuf.Encode(rankUpdate)
