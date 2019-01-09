@@ -8,10 +8,11 @@ import (
 )
 
 const (
-	KeywordsBucket = "keywords"
-	LinksBucket = "links"
+	KeywordsBucket  = "keywords"
+	LinksBucket     = "links"
 	CitationsBucket = "citations"
-	PageHashBucket = "pageHash"
+	PageHashBucket  = "pageHash"
+	PageRankBucket  = "pageRank"
 )
 
 type Storage struct {
@@ -26,7 +27,7 @@ type Storage struct {
 
 func NewStorage(gossiperName string) (s *Storage){
 	db, err := bolt.Open(gossiperName+"_index.db", 0666, nil)
-	buckets := []string{KeywordsBucket, LinksBucket, PageHashBucket, CitationsBucket}
+	buckets := []string{KeywordsBucket, LinksBucket, PageHashBucket, CitationsBucket, PageRankBucket}
 	if err != nil {
 		panic(err)
 	}

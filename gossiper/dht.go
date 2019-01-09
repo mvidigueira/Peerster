@@ -136,18 +136,26 @@ func (g *Gossiper) replyStore(msg *dht.Message) {
 			stores++
 			links = append(links, item.OutBoundLinks...)
 		}
-		idArray := dht_util.GenerateKeyHash(batchTemp.OutBoundLinksPackages[0].Url)
+		url := batchTemp.OutBoundLinksPackages[0].Url
+
+		idArray := dht_util.GenerateKeyHash(url)
 		id := idArray[:]
+
+		outboundPackage := &webcrawler.OutBoundLinksPackage{batchTemp.OutBoundLinksPackages[0].Url, links}
 		g.dhtDb.Db.Update(func(tx *bbolt.Tx) error {
 			b := tx.Bucket([]byte(dht.LinksBucket))
-			oldPackage := &webcrawler.OutBoundLinksPackage{batchTemp.OutBoundLinksPackages[0].Url, links}
-			data, err := protobuf.Encode(oldPackage)
+			data, err := protobuf.Encode(outboundPackage)
 			err = b.Put(id, data)
 			return err
 		})
 		if err != nil {
 			log.Fatal(err)
 		}
+
+		numberOfLinks := len(links)
+		rankInfo := &RankInfo{Url: url, Rank: InitialRank, NumberOfOutboundLinks: numberOfLinks}
+		relerr := rankInfo.updatePageRank(g)
+		g.setRank(outboundPackage, rankInfo, relerr)
 
 	case dht.CitationsBucket:
 		batchTemp := &webcrawler.BatchMessage{}
@@ -158,7 +166,8 @@ func (g *Gossiper) replyStore(msg *dht.Message) {
 		g.dhtDb.Db.Update(func(tx *bbolt.Tx) error {
 			b := tx.Bucket([]byte(dht.CitationsBucket))
 
-			itemLoop: for _, item := range batchTemp.Citations {
+		itemLoop:
+			for _, item := range batchTemp.Citations {
 				idArray := dht_util.GenerateKeyHash(item.Url)
 				id := idArray[:]
 				oldCitationsData := b.Get(id)
@@ -173,7 +182,7 @@ func (g *Gossiper) replyStore(msg *dht.Message) {
 							continue itemLoop
 						}
 					}
-				}else {
+				} else {
 					oldCitations.Url = item.Url
 				}
 				oldCitations.CitedBy = append(oldCitations.CitedBy, item.CitedBy...)
@@ -188,6 +197,14 @@ func (g *Gossiper) replyStore(msg *dht.Message) {
 		if err != nil {
 			log.Fatal(err)
 		}
+	case dht.PageRankBucket:
+		update := &RankUpdate{}
+		err := protobuf.Decode(msg.Store.Data, update)
+		if err != nil {
+			panic(err)
+		}
+		g.receiveRankUpdate(update)
+
 	default:
 		fmt.Printf("Unknown store type: %s.", storeType)
 	}
@@ -313,7 +330,7 @@ func (g *Gossiper) printKnownNodes() {
 	fmt.Printf("Known DHT nodes: %s\n", strings.Join(nodes, ", "))
 }
 
-func (g *Gossiper) lookupWord(token string) (urlMap *webcrawler.KeywordToURLMap){
+func (g *Gossiper) lookupWord(token string) (urlMap *webcrawler.KeywordToURLMap) {
 	word := porterstemmer.StemString(token)
 	data, found := g.LookupValue(dht_util.GenerateKeyHash(word), dht.KeywordsBucket)
 	if !found {
@@ -322,15 +339,18 @@ func (g *Gossiper) lookupWord(token string) (urlMap *webcrawler.KeywordToURLMap)
 	}
 	urlMap = &webcrawler.KeywordToURLMap{}
 	err := protobuf.Decode(data, urlMap)
-	if  err != nil {
+	if err != nil {
 		panic(err)
 	}
 	return
 }
 
-const MaxResults  = 10
+const (
+	MaxResults     = 10
+	pageRankWeight = 0.3
+)
 
-func (g *Gossiper) DoSearch(query string) (rankedResults webcrawler.RankedResults){
+func (g *Gossiper) DoSearch(query string) (rankedResults webcrawler.RankedResults) {
 	log.Printf("Starting lookup for %s \n", query)
 
 	tokens := strings.Split(query, " ")
@@ -366,17 +386,17 @@ func (g *Gossiper) DoSearch(query string) (rankedResults webcrawler.RankedResult
 		maxResults = MaxResults
 	}
 	for _, result := range results.Results[:maxResults] {
-		data, found := g.LookupValue(dht_util.GenerateKeyHash(result.Link), dht.CitationsBucket)
+		data, found := g.LookupValue(dht_util.GenerateKeyHash(result.Link), dht.PageRankBucket)
 		rank := 0.0
 		if found {
-			citations := &webcrawler.Citations{}
-			err := protobuf.Decode(data, citations)
+			pageRank := &RankInfo{}
+			err := protobuf.Decode(data, pageRank)
 			if err != nil {
 				panic(err)
 			}
-			rank = 0.1*float64(len(citations.CitedBy)) //TODO: this is a dummy
+			rank = pageRankWeight * pageRank.Rank //TODO: normalize before weighting
 		}
-		rank += 0.9*result.SimScore
+		rank += (1 - pageRankWeight) * result.SimScore
 		result := result //make a copy
 		rankedResults.Results = append(rankedResults.Results, webcrawler.RankedResult{&result, rank})
 	}

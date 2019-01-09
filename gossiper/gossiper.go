@@ -61,6 +61,7 @@ type Gossiper struct {
 	dhtDb        *dht.Storage
 	dhtBootstrap string
 	webCrawler   *webcrawler.Crawler
+	rankerCache  *rankerCache
 }
 
 //NewGossiper creates a new gossiper
@@ -106,12 +107,13 @@ func NewGossiper(address, name string, UIport string, peers []string, simple boo
 
 		blockchainLedger: NewBlockchainLedger(),
 
-		dhtDb: dht.NewStorage(name),
+		dhtDb:        dht.NewStorage(name),
 		dhtMyID:      dht.InitialRandNodeID(),
 		dhtChanMap:   dht.NewChanMap(),
 		dhtBootstrap: dhtBootstrap,
 
-		webCrawler: webcrawler.New(crawlLeader),
+		webCrawler:  webcrawler.New(crawlLeader),
+		rankerCache: newRankerCache(),
 	}
 
 	g.bucketTable = newBucketTable(g.dhtMyID, g)

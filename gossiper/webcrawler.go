@@ -33,7 +33,7 @@ func (g *Gossiper) webCrawlerListenerRoutine() {
 }
 
 // The maximum safe size of a UDP packet is 8192 but it could happen that some pages contains a set of urls
-// which is larger than 8192 bytes and hence we need to break down the url packages into batches which are smaller than 8192bytes.
+// which is larger than 8192 bytes and hence we need to break down the Url packages into batches which are smaller than 8192bytes.
 func (g *Gossiper) createUDPBatches(owner *dht.NodeState, items []interface{}) []interface{} {
 	udpMaxSize := 7500
 	packet := make([]interface{}, 0, udpMaxSize)
@@ -173,7 +173,7 @@ func (g *Gossiper) distributeHyperlinks(hyperlinkPackage *webcrawler.HyperlinkPa
 				},
 			}
 		} else {
-			// url belong to another crawlers domain.
+			// Url belong to another crawlers domain.
 			g.batchSendURLS(&owner, hyperlinks)
 		}
 	}
@@ -244,7 +244,7 @@ func (g *Gossiper) saveCitationsInDHT(citationsPackage *webcrawler.CitationsPack
 	}
 }
 
-// Save each keyword of a url at the responsible node
+// Save each keyword of a Url at the responsible node
 func (g *Gossiper) saveKeywordsInDHT(indexPackage *webcrawler.IndexPackage) {
 	frequencies, url := indexPackage.KeywordFrequencies, indexPackage.Url
 	destinations := map[dht.NodeState][]*webcrawler.KeywordToURLMap{}
@@ -287,7 +287,7 @@ func (g *Gossiper) saveKeywordsInDHT(indexPackage *webcrawler.IndexPackage) {
 }
 
 // Saves the hash of a page in the DHT. This is used to prevent duplicate crawling of the same page.
-// The reason why we hash the content instead of the url is because there might be different urls which points to the same page.
+// The reason why we hash the content instead of the Url is because there might be different urls which points to the same page.
 func (g *Gossiper) savePageHashInDHT(pageHash *webcrawler.PageHashPackage) {
 	kClosest := g.LookupNodes(pageHash.Hash)
 	if len(kClosest) == 0 {
