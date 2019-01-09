@@ -28,11 +28,12 @@ func (r *SearchResult) CalculateSimScore() float64{
 
 type RankedResult struct {
 	Result *SearchResult
+	PageRank float64
 	Rank float64
 }
 
 type RankedResults struct {
-	Results []RankedResult
+	Results []*RankedResult
 }
 
 func (rrs RankedResults) Len() int{

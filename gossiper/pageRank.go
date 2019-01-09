@@ -1,13 +1,13 @@
 package gossiper
 
 import (
+	"fmt"
 	"github.com/bluele/gcache"
 	"github.com/dedis/protobuf"
 	"github.com/mvidigueira/Peerster/dht"
 	"github.com/mvidigueira/Peerster/dht_util"
 	"github.com/mvidigueira/Peerster/webcrawler"
 	"go.etcd.io/bbolt"
-	"log"
 	"math"
 )
 
@@ -55,7 +55,7 @@ func (g *Gossiper) receiveRankUpdate(update *RankUpdate) {
 			relerr := linkInfo.updatePageRankWithInfo(update.RankInfo, g)
 			if relerr > epsilon {
 				linkOutbounds := g.getOutboundLinksFromDb(id)
-				g.setRank(linkOutbounds, linkInfo, relerr)
+				g.setRank(*linkOutbounds, *linkInfo, relerr)
 			}
 		}
 	}
@@ -79,13 +79,13 @@ func (g *Gossiper) getOutboundLinksFromDb(id dht_util.TypeID) (outboundLinksPack
 
 //called when the node has recalculated its local Rank and wants to store
 //sending updates to the rest of the network as well
-func (g *Gossiper) setRank(urlInfo *webcrawler.OutBoundLinksPackage, pageInfo *RankInfo, relerr float64) {
+func (g *Gossiper) setRank(urlInfo webcrawler.OutBoundLinksPackage, pageInfo RankInfo, relerr float64) {
 	if relerr < epsilon{
 		return
 	}
 
 	id := dht_util.GenerateKeyHash(pageInfo.Url)
-	data, err := protobuf.Encode(pageInfo)
+	data, err := protobuf.Encode(&pageInfo)
 	if err != nil {
 		panic(err)
 	}
@@ -98,20 +98,62 @@ func (g *Gossiper) setRank(urlInfo *webcrawler.OutBoundLinksPackage, pageInfo *R
 		return nil
 	})
 
+	g.batchRankUpdates(&urlInfo, &pageInfo)
+}
+
+func (g *Gossiper) batchRankUpdates(urlInfo *webcrawler.OutBoundLinksPackage, pageInfo *RankInfo){
+	destinations := make(map[dht.NodeState][]*RankUpdate)
+
 	bound := 10
-	if len(urlInfo.OutBoundLinks) < 10 {
+	if len(urlInfo.OutBoundLinks) < bound{
 		bound = len(urlInfo.OutBoundLinks)
 	}
-	for _, outboundLink := range urlInfo.OutBoundLinks[:bound] { //TODO: remove this debug bound
-		id = dht_util.GenerateKeyHash(outboundLink)
-		rankUpdate := &RankUpdate{OutboundLink:outboundLink, RankInfo: pageInfo}
-		data, err := protobuf.Encode(rankUpdate)
-		if err != nil {
-			panic(err)
+
+	for _, outboundLink := range urlInfo.OutBoundLinks[:bound] { //TODO: remove debug bound
+		id := dht_util.GenerateKeyHash(outboundLink)
+		kClosest := g.LookupNodes(id)
+		if len(kClosest) == 0 {
+			fmt.Printf("Could not perform store since no neighbours found.\n")
+			break
 		}
-		g.StoreInDHT(id, data, dht.PageRankBucket)
+		closest := kClosest[0]
+		val, _ := destinations[*closest]
+		destinations[*closest] = append(val, &RankUpdate{OutboundLink:outboundLink, RankInfo: pageInfo})
 	}
-	log.Println("set rank")
+
+	for dest, batch := range destinations {
+		if dest.Address == g.address {
+			// This node is the destination
+			packetBytes, err := protobuf.Encode(&BatchMessage{PageRankUpdates: batch})
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			msg := g.newDHTStore(dest.NodeID, packetBytes, dht.CitationsBucket)
+			g.replyStore(msg)
+			continue
+		}
+
+		s := make([]interface{}, len(batch))
+		for i, v := range batch {
+			s[i] = v
+		}
+		batches := g.createUDPBatches(&dest, s)
+		for _, batch := range batches {
+			tmp := make([]*RankUpdate, len(batch.([]interface{})))
+			for k, b := range batch.([]interface{}) {
+				tmp[k] = b.(*RankUpdate)
+			}
+			packetBytes, err := protobuf.Encode(&BatchMessage{PageRankUpdates: tmp})
+			if err != nil {
+				panic(err)
+			}
+			err = g.sendStore(&dest, [20]byte{}, packetBytes, dht.PageRankBucket)
+			if err != nil {
+				fmt.Printf("Failed to store key.\n")
+			}
+		}
+	}
 }
 
 func (page *RankInfo) updatePageRank(g *Gossiper) (float64){

@@ -100,33 +100,44 @@ func (g *Gossiper) sendStore(ns *dht.NodeState, key dht_util.TypeID, data []byte
 
 var stores = 0
 
+type BatchMessage struct {
+	UrlMapList            []*webcrawler.KeywordToURLMap
+	OutBoundLinksPackages []*webcrawler.OutBoundLinksPackage
+	Citations             []*webcrawler.Citations
+	PageRankUpdates       []*RankUpdate
+}
+
 // replyStore - "replies" to a store rpc (stores the data locally)
 func (g *Gossiper) replyStore(msg *dht.Message) {
 	storeType := msg.Store.Type
 	switch storeType {
 	case dht.KeywordsBucket:
-		batchTemp := &webcrawler.BatchMessage{}
-		protobuf.Decode(msg.Store.Data, batchTemp)
-		for _, item := range batchTemp.UrlMapList {
-			stores++
-			ok := g.dhtDb.AddLinksForKeyword(item.Keyword, *item)
-			if !ok {
-				fmt.Printf("Failed to add keywords.\n")
+		go func() {
+			batchTemp := &BatchMessage{}
+			protobuf.Decode(msg.Store.Data, batchTemp)
+			for _, item := range batchTemp.UrlMapList {
+				stores++
+				ok := g.dhtDb.AddLinksForKeyword(item.Keyword, *item)
+				if !ok {
+					fmt.Printf("Failed to add keywords.\n")
+				}
 			}
-		}
+		}()
 	case dht.PageHashBucket:
-		var err error
-		g.dhtDb.Db.Update(func(tx *bbolt.Tx) error {
-			b := tx.Bucket([]byte(storeType))
-			err = b.Put(msg.Store.Key[:], msg.Store.Data)
-			return err
-		})
-		if err != nil {
-			log.Fatal(err)
-		}
+		go func() {
+			var err error
+			g.dhtDb.Db.Update(func(tx *bbolt.Tx) error {
+				b := tx.Bucket([]byte(storeType))
+				err = b.Put(msg.Store.Key[:], msg.Store.Data)
+				return err
+			})
+			if err != nil {
+				log.Fatal(err)
+			}
+		}()
 
 	case dht.LinksBucket:
-		batchTemp := &webcrawler.BatchMessage{}
+		batchTemp := &BatchMessage{}
 		err := protobuf.Decode(msg.Store.Data, batchTemp)
 		if err != nil {
 			panic(err)
@@ -155,56 +166,61 @@ func (g *Gossiper) replyStore(msg *dht.Message) {
 		numberOfLinks := len(links)
 		rankInfo := &RankInfo{Url: url, Rank: InitialRank, NumberOfOutboundLinks: numberOfLinks}
 		relerr := rankInfo.updatePageRank(g)
-		g.setRank(outboundPackage, rankInfo, relerr)
+		go g.setRank(*outboundPackage, *rankInfo, relerr)
 
 	case dht.CitationsBucket:
-		batchTemp := &webcrawler.BatchMessage{}
-		err := protobuf.Decode(msg.Store.Data, batchTemp)
-		if err != nil {
-			panic(err)
-		}
-		g.dhtDb.Db.Update(func(tx *bbolt.Tx) error {
-			b := tx.Bucket([]byte(dht.CitationsBucket))
+		go func() {
+			batchTemp := &BatchMessage{}
+			err := protobuf.Decode(msg.Store.Data, batchTemp)
+			if err != nil {
+				panic(err)
+			}
+			g.dhtDb.Db.Update(func(tx *bbolt.Tx) error {
+				b := tx.Bucket([]byte(dht.CitationsBucket))
 
-		itemLoop:
-			for _, item := range batchTemp.Citations {
-				idArray := dht_util.GenerateKeyHash(item.Url)
-				id := idArray[:]
-				oldCitationsData := b.Get(id)
-				oldCitations := &webcrawler.Citations{}
-				if oldCitationsData != nil {
-					err = protobuf.Decode(oldCitationsData, oldCitations)
+			itemLoop:
+				for _, item := range batchTemp.Citations {
+					idArray := dht_util.GenerateKeyHash(item.Url)
+					id := idArray[:]
+					oldCitationsData := b.Get(id)
+					oldCitations := &webcrawler.Citations{}
+					if oldCitationsData != nil {
+						err = protobuf.Decode(oldCitationsData, oldCitations)
+						if err != nil {
+							return err
+						}
+						for _, citation := range oldCitations.CitedBy {
+							if citation == item.CitedBy[0] {
+								continue itemLoop
+							}
+						}
+					} else {
+						oldCitations.Url = item.Url
+					}
+					oldCitations.CitedBy = append(oldCitations.CitedBy, item.CitedBy...)
+					data, err := protobuf.Encode(oldCitations)
+					err = b.Put(id, data)
 					if err != nil {
 						return err
 					}
-					for _, citation := range oldCitations.CitedBy {
-						if citation == item.CitedBy[0] {
-							continue itemLoop
-						}
-					}
-				} else {
-					oldCitations.Url = item.Url
 				}
-				oldCitations.CitedBy = append(oldCitations.CitedBy, item.CitedBy...)
-				data, err := protobuf.Encode(oldCitations)
-				err = b.Put(id, data)
-				if err != nil {
-					return err
-				}
+				return nil
+			})
+			if err != nil {
+				log.Fatal(err)
 			}
-			return nil
-		})
-		if err != nil {
-			log.Fatal(err)
-		}
+		}()
 	case dht.PageRankBucket:
-		update := &RankUpdate{}
-		err := protobuf.Decode(msg.Store.Data, update)
-		if err != nil {
-			panic(err)
-		}
-		g.receiveRankUpdate(update)
-
+		go func() {
+			batchTemp := &BatchMessage{}
+			err := protobuf.Decode(msg.Store.Data, batchTemp)
+			if err != nil {
+				panic(err)
+			}
+			for _, update := range batchTemp.PageRankUpdates {
+				g.receiveRankUpdate(update)
+			}
+		}()
 	default:
 		fmt.Printf("Unknown store type: %s.", storeType)
 	}
@@ -385,21 +401,31 @@ func (g *Gossiper) DoSearch(query string) (rankedResults webcrawler.RankedResult
 	if maxResults > MaxResults {
 		maxResults = MaxResults
 	}
+
+	simScoreMax := 0.0
 	for _, result := range results.Results[:maxResults] {
 		data, found := g.LookupValue(dht_util.GenerateKeyHash(result.Link), dht.PageRankBucket)
-		rank := 0.0
+		pageRankVal := 0.0
 		if found {
 			pageRank := &RankInfo{}
 			err := protobuf.Decode(data, pageRank)
 			if err != nil {
 				panic(err)
 			}
-			rank = pageRankWeight * pageRank.Rank //TODO: normalize before weighting
+			pageRankVal = pageRank.Rank
 		}
-		rank += (1 - pageRankWeight) * result.SimScore
 		result := result //make a copy
-		rankedResults.Results = append(rankedResults.Results, webcrawler.RankedResult{&result, rank})
+		if result.SimScore > simScoreMax {
+			simScoreMax = result.SimScore
+		}
+		rankedResults.Results = append(rankedResults.Results, &webcrawler.RankedResult{&result, pageRankVal, 0})
 	}
+
+	for _, rankedResult := range rankedResults.Results {
+		rankedResult.Result.SimScore = rankedResult.Result.SimScore / simScoreMax
+		rankedResult.Rank = (1-pageRankWeight)*rankedResult.Result.SimScore + pageRankWeight*rankedResult.PageRank
+	}
+
 	sort.Sort(rankedResults)
 	for _, result := range rankedResults.Results {
 		log.Printf("RESULT: %s, (%.2f)\n", result.Result.Link, result.Rank)

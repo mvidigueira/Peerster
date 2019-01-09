@@ -18,13 +18,6 @@ type KeywordToURLMap struct {
 	LinkData map[string]int //url:keywordOccurrences
 }
 
-// You cannot serialize plain lists with protobuf but you have to wrap it in a struct
-type BatchMessage struct {
-	UrlMapList            []*KeywordToURLMap
-	OutBoundLinksPackages []*OutBoundLinksPackage
-	Citations             []*Citations
-}
-
 type HyperlinkPackage struct {
 	Links []string
 }

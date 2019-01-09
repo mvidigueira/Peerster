@@ -38,7 +38,10 @@
             }
             .stats{
                 font-size: 0.7em;
-                float: right;
+                margin-bottom: 1%;
+            }
+            .resultLink{
+
             }
 
             #results {
@@ -83,12 +86,11 @@
                                 var link = domain+d.Result.Link;
                                 var simscore = d.Result.SimScore.toFixed(2);
                                 var rank = d.Rank.toFixed(2);
+                                var pageRank = d.PageRank.toFixed(2);
                                 results.append(
                                     `<li>
-                                        <p>
-                                            <a href='${link}'>${name}</a>
-                                            <span class="stats"> (simscore: ${simscore}, rank: ${rank})</span>
-                                        </p>
+                                            <a class="resultLink" href='${link}'>${name}</a>
+                                            <p class="stats"> (simscore: ${simscore}, pageRank: ${pageRank}, rank: ${rank})</p>
                                      </li>
                                     `
                                 );

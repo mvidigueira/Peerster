@@ -41,20 +41,12 @@ func (g *Gossiper) createUDPBatches(owner *dht.NodeState, items []interface{}) [
 	batches := make([]interface{}, 0, 1)
 	for _, item := range items {
 		var itemLength int
-		switch v := item.(type) { //TODO: fixme
+		switch v := item.(type) {
 		case string:
 			itemLength = len(v)
-		case *webcrawler.KeywordToURLMap:
-			bytes, _ := protobuf.Encode(item)
-			itemLength = len(bytes)
-		case *webcrawler.OutBoundLinksPackage:
-			bytes, _ := protobuf.Encode(item)
-			itemLength = len(bytes)
-		case *webcrawler.Citations:
-			bytes, _ := protobuf.Encode(item)
-			itemLength = len(bytes)
 		default:
-			panic("invalid interface type")
+			bytes, _ := protobuf.Encode(item)
+			itemLength = len(bytes)
 		}
 		if packetSize+itemLength < udpMaxSize {
 			packetSize += itemLength
@@ -102,7 +94,7 @@ func (g *Gossiper) batchSendKeywords(owner *dht.NodeState, items []*webcrawler.K
 		for k, b := range batch.([]interface{}) {
 			tmp[k] = b.(*webcrawler.KeywordToURLMap)
 		}
-		packetBytes, err := protobuf.Encode(&webcrawler.BatchMessage{UrlMapList: tmp})
+		packetBytes, err := protobuf.Encode(&BatchMessage{UrlMapList: tmp})
 		if err != nil {
 			fmt.Println(err)
 			fmt.Printf("Error encoding urlToKeywordMap.\n")
@@ -126,7 +118,7 @@ func (g *Gossiper) batchSendCitations(owner *dht.NodeState, items []*webcrawler.
 		for k, b := range batch.([]interface{}) {
 			tmp[k] = b.(*webcrawler.Citations)
 		}
-		packetBytes, err := protobuf.Encode(&webcrawler.BatchMessage{Citations: tmp})
+		packetBytes, err := protobuf.Encode(&BatchMessage{Citations: tmp})
 		if err != nil {
 			panic(err)
 		}
@@ -202,7 +194,7 @@ func (g *Gossiper) saveOutboundLinksInDHT(outboundLinks *webcrawler.OutBoundLink
 		for k, b := range batch.([]interface{}) {
 			tmp[k] = b.(*webcrawler.OutBoundLinksPackage)
 		}
-		packetBytes, err := protobuf.Encode(&webcrawler.BatchMessage{OutBoundLinksPackages: tmp})
+		packetBytes, err := protobuf.Encode(&BatchMessage{OutBoundLinksPackages: tmp})
 		if err != nil {
 			panic(err)
 		}
@@ -231,7 +223,7 @@ func (g *Gossiper) saveCitationsInDHT(citationsPackage *webcrawler.CitationsPack
 	for dest, batch := range destinations {
 		if dest.Address == g.address {
 			// This node is the destination
-			packetBytes, err := protobuf.Encode(&webcrawler.BatchMessage{Citations: batch})
+			packetBytes, err := protobuf.Encode(&BatchMessage{Citations: batch})
 			if err != nil {
 				fmt.Println(err)
 				return
@@ -260,20 +252,14 @@ func (g *Gossiper) saveKeywordsInDHT(indexPackage *webcrawler.IndexPackage) {
 			Keyword:  k,
 			LinkData: map[string]int{url: v},
 		}
-		val, found := destinations[*closest]
-		if !found {
-			destinations[*closest] = []*webcrawler.KeywordToURLMap{
-				urlToKeywordMap,
-			}
-		} else {
-			destinations[*closest] = append(val, urlToKeywordMap)
-		}
+		val, _ := destinations[*closest]
+		destinations[*closest] = append(val, urlToKeywordMap)
 	}
 
 	for dest, batch := range destinations {
 		if dest.Address == g.address {
 			// This node is the destination
-			packetBytes, err := protobuf.Encode(&webcrawler.BatchMessage{UrlMapList: batch})
+			packetBytes, err := protobuf.Encode(&BatchMessage{UrlMapList: batch})
 			if err != nil {
 				fmt.Println(err)
 				return
