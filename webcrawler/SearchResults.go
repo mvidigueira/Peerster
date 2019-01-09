@@ -84,5 +84,6 @@ func Join(this SearchResults, urlMap *KeywordToURLMap) (results SearchResults){
 			results.Results = append(results.Results, result)
 		}
 	}
+	results.numberOfDocs = this.numberOfDocs
 	return
 }

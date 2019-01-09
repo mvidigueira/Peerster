@@ -103,7 +103,7 @@ func (g *Gossiper) setRank(urlInfo webcrawler.OutBoundLinksPackage, pageInfo Ran
 
 func (g *Gossiper) batchRankUpdates(urlInfo *webcrawler.OutBoundLinksPackage, pageInfo *RankInfo){
 	destinations := make(map[dht.NodeState][]*RankUpdate)
-	
+
 	for _, outboundLink := range urlInfo.OutBoundLinks {
 		id := dht_util.GenerateKeyHash(outboundLink)
 		kClosest := g.LookupNodes(id)

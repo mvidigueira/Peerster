@@ -376,7 +376,7 @@ func (g *Gossiper) DoSearch(query string) (rankedResults webcrawler.RankedResult
 	var numberOfDocuments int //TODO: we should improve this estimate
 
 	g.dhtDb.Db.View(func(tx *bbolt.Tx) error {
-		b := tx.Bucket([]byte(dht.KeywordsBucket))
+		b := tx.Bucket([]byte(dht.PageHashBucket))
 		stats := b.Stats()
 		numberOfDocuments = stats.KeyN
 		return nil
@@ -390,6 +390,9 @@ func (g *Gossiper) DoSearch(query string) (rankedResults webcrawler.RankedResult
 	results := webcrawler.NewSearchResults(newResults, numberOfDocuments)
 	sort.Sort(results)
 	for _, t := range tokens[1:] {
+		if len(t) < webcrawler.MinWordLen {
+			continue
+		}
 		newResults = g.lookupWord(t)
 		if newResults != nil {
 			results = webcrawler.Join(results, newResults)
