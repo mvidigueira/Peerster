@@ -10,6 +10,8 @@ Couse Project - Decentralized Systems Engineering 18 (EPFL)
 2. Murmur3 (hash-function) - github.com/spaolacci/murmur3
 3. Goquery (html parsing library) - github.com/PuerkitoBio/goquery
 4. Stopwords - github.com/bbalet/stopwords
+5. Porterstemmer (stemming library) github.com/reiver/go-porterstemmer
+6. BoltDB (Persistent key-value store) github.com/etcd-io/bbolt
 
 All of the above dependencies are go gettable.
 
