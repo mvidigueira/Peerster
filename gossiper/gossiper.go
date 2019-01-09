@@ -2,6 +2,7 @@ package gossiper
 
 import (
 	"fmt"
+	"github.com/mvidigueira/Peerster/dht_util"
 	"log"
 	"math/rand"
 	"net"
@@ -54,12 +55,13 @@ type Gossiper struct {
 
 	blockchainLedger *BlockchainLedger
 
-	dhtMyID      [dht.IDByteSize]byte
+	dhtMyID      [dht_util.IDByteSize]byte
 	dhtChanMap   *dht.ChanMap
 	bucketTable  *bucketTable
 	dhtDb        *dht.Storage
 	dhtBootstrap string
 	webCrawler   *webcrawler.Crawler
+	rankerCache  *rankerCache
 }
 
 //NewGossiper creates a new gossiper
@@ -105,12 +107,13 @@ func NewGossiper(address, name string, UIport string, peers []string, simple boo
 
 		blockchainLedger: NewBlockchainLedger(),
 
-		dhtDb: dht.NewStorage(name),
+		dhtDb:        dht.NewStorage(name),
 		dhtMyID:      dht.InitialRandNodeID(),
 		dhtChanMap:   dht.NewChanMap(),
 		dhtBootstrap: dhtBootstrap,
 
-		webCrawler: webcrawler.New(crawlLeader),
+		webCrawler:  webcrawler.New(crawlLeader),
+		rankerCache: newRankerCache(),
 	}
 
 	g.bucketTable = newBucketTable(g.dhtMyID, g)

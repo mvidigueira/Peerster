@@ -2,6 +2,7 @@ package webcrawler
 
 import (
 	"fmt"
+	"github.com/mvidigueira/Peerster/dht_util"
 	"hash"
 	"hash/fnv"
 	"log"
@@ -15,8 +16,7 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"github.com/bbalet/stopwords"
 	"github.com/mvidigueira/Peerster/bloomfilter"
-	"github.com/mvidigueira/Peerster/dht"
-	porterstemmer "github.com/reiver/go-porterstemmer"
+	"github.com/reiver/go-porterstemmer"
 )
 
 type Crawler struct {
@@ -53,7 +53,7 @@ func (wc *Crawler) Start() {
 	if wc.leader {
 		wc.InChan <- &CrawlerPacket{
 			HyperlinkPackage: &HyperlinkPackage{
-				Links: []string{"/wiki/Swedish_Empire"},
+				Links: []string{"/wiki/World_War_II"},
 			},
 		}
 	}
@@ -75,6 +75,10 @@ func (wc *Crawler) crawl() {
 				nextPage := wc.popQueue()
 
 				page := wc.crawlUrl(nextPage)
+				if page == nil {
+					wc.updateQueue([]string{nextPage})
+					continue
+				}
 
 				fmt.Printf("Crawled %s, found %d hyperlinks and %d keywords.\n", nextPage, len(page.Hyperlinks), len(page.KeywordFrequencies))
 
@@ -93,6 +97,24 @@ func (wc *Crawler) crawl() {
 				if found {
 					fmt.Printf("Page has already been crawled, skipping.\n")
 					continue
+				}
+
+				//Store the outbound links of this page
+				wc.OutChan <- &CrawlerPacket{
+					OutBoundLinks: &OutBoundLinksPackage{
+						Url: nextPage,
+						OutBoundLinks: page.Hyperlinks,
+					},
+				}
+
+				citationsPackage := &CitationsPackage{}
+				for _, link := range page.Hyperlinks {
+					citationsPackage.CitationsList = append(citationsPackage.CitationsList, Citations{link, []string{nextPage}})
+				}
+
+				//Store the pages being cited by this page
+				wc.OutChan <- &CrawlerPacket{
+					CitationsPackage: citationsPackage,
 				}
 
 				// Filter out urls that already has been crawler by this crawler
@@ -153,6 +175,9 @@ func (wc *Crawler) crawlUrl(urlString string) *PageInfo {
 	u, _ := url.ParseRequestURI(urlString)
 
 	rawDoc := wc.getPage(urlString)
+	if rawDoc == nil {
+		return nil
+	}
 
 	doc := wc.cleanPage(*rawDoc)
 
@@ -160,7 +185,7 @@ func (wc *Crawler) crawlUrl(urlString string) *PageInfo {
 
 	words := wc.extractWords(doc)
 
-	return &PageInfo{Hyperlinks: wc.removeDuplicates(urls), KeywordFrequencies: wc.keywordFrequency(words), Hash: dht.GenerateKeyHash(rawDoc.Text())}
+	return &PageInfo{Hyperlinks: wc.removeDuplicates(urls), KeywordFrequencies: wc.keywordFrequency(words), Hash: dht_util.GenerateKeyHash(rawDoc.Text())}
 }
 
 // Extracts words from a wikipedia document
@@ -199,11 +224,10 @@ func (wc *Crawler) extractWords(doc goquery.Document) []string {
 // Extracts local hyperlinks (links that does not point towards other domains than wikipedia)
 func (wc *Crawler) extractHyperLinks(doc goquery.Document, host string) []string {
 	urls := []string{}
-
+	validURL := regexp.MustCompile(`^[a-zA-Z/_]+$`)
 	doc.Find("a").Each(func(i int, el *goquery.Selection) {
 		href, exists := el.Attr("href")
 		if exists {
-			validURL := regexp.MustCompile(`^[a-zA-Z/_]+$`)
 			if href[0] != '/' || !validURL.MatchString(href) {
 				return
 			}
@@ -268,7 +292,6 @@ func (wc *Crawler) removeDuplicates(strs []string) []string {
 	return list
 }
 
-// Removes duplicates from the list given as input
 func (wc *Crawler) keywordFrequency(keywords []string) map[string]int {
 	frequencies := make(map[string]int)
 	for _, keyword := range keywords {

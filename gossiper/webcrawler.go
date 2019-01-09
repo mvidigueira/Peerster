@@ -2,7 +2,7 @@ package gossiper
 
 import (
 	"fmt"
-	"log"
+	"github.com/mvidigueira/Peerster/dht_util"
 	"protobuf"
 	"time"
 
@@ -15,6 +15,10 @@ import (
 func (g *Gossiper) webCrawlerListenerRoutine() {
 	for packet := range g.webCrawler.OutChan {
 		switch {
+		case packet.OutBoundLinks != nil:
+			g.saveOutboundLinksInDHT(packet.OutBoundLinks)
+		case packet.CitationsPackage != nil:
+			g.saveCitationsInDHT(packet.CitationsPackage)
 		case packet.HyperlinkPackage != nil:
 			g.distributeHyperlinks(packet.HyperlinkPackage)
 		case packet.IndexPackage != nil:
@@ -29,7 +33,7 @@ func (g *Gossiper) webCrawlerListenerRoutine() {
 }
 
 // The maximum safe size of a UDP packet is 8192 but it could happen that some pages contains a set of urls
-// which is larger than 8192 bytes and hence we need to break down the url packages into batches which are smaller than 8192bytes.
+// which is larger than 8192 bytes and hence we need to break down the Url packages into batches which are smaller than 8192bytes.
 func (g *Gossiper) createUDPBatches(owner *dht.NodeState, items []interface{}) []interface{} {
 	udpMaxSize := 7500
 	packet := make([]interface{}, 0, udpMaxSize)
@@ -40,11 +44,9 @@ func (g *Gossiper) createUDPBatches(owner *dht.NodeState, items []interface{}) [
 		switch v := item.(type) {
 		case string:
 			itemLength = len(v)
-		case *dht.KeywordToURLMap:
+		default:
 			bytes, _ := protobuf.Encode(item)
 			itemLength = len(bytes)
-		default:
-			log.Fatal("invalid interface type")
 		}
 		if packetSize+itemLength < udpMaxSize {
 			packetSize += itemLength
@@ -81,18 +83,18 @@ func (g *Gossiper) batchSendURLS(owner *dht.NodeState, hyperlinks []string) {
 	}
 }
 
-func (g *Gossiper) batchSendKeywords(owner *dht.NodeState, items []*dht.KeywordToURLMap) {
+func (g *Gossiper) batchSendKeywords(owner *dht.NodeState, items []*webcrawler.KeywordToURLMap) {
 	s := make([]interface{}, len(items))
 	for i, v := range items {
 		s[i] = v
 	}
 	batches := g.createUDPBatches(owner, s)
 	for _, batch := range batches {
-		tmp := make([]*dht.KeywordToURLMap, len(batch.([]interface{})))
+		tmp := make([]*webcrawler.KeywordToURLMap, len(batch.([]interface{})))
 		for k, b := range batch.([]interface{}) {
-			tmp[k] = b.(*dht.KeywordToURLMap)
+			tmp[k] = b.(*webcrawler.KeywordToURLMap)
 		}
-		packetBytes, err := protobuf.Encode(&dht.BatchMessage{List: tmp})
+		packetBytes, err := protobuf.Encode(&BatchMessage{UrlMapList: tmp})
 		if err != nil {
 			fmt.Println(err)
 			fmt.Printf("Error encoding urlToKeywordMap.\n")
@@ -105,13 +107,35 @@ func (g *Gossiper) batchSendKeywords(owner *dht.NodeState, items []*dht.KeywordT
 	}
 }
 
+func (g *Gossiper) batchSendCitations(owner *dht.NodeState, items []*webcrawler.Citations) {
+	s := make([]interface{}, len(items))
+	for i, v := range items {
+		s[i] = v
+	}
+	batches := g.createUDPBatches(owner, s)
+	for _, batch := range batches {
+		tmp := make([]*webcrawler.Citations, len(batch.([]interface{})))
+		for k, b := range batch.([]interface{}) {
+			tmp[k] = b.(*webcrawler.Citations)
+		}
+		packetBytes, err := protobuf.Encode(&BatchMessage{Citations: tmp})
+		if err != nil {
+			panic(err)
+		}
+		err = g.sendStore(owner, [20]byte{}, packetBytes, dht.CitationsBucket)
+		if err != nil {
+			fmt.Printf("Failed to store key.\n")
+		}
+	}
+}
+
 // Identifies the responsible node for each hyperlink. If the hyperlink belongs to this node, then the hyperlinks are simply sent back
 // to the local webcrawler. If the hyperlinks belong to another webcrawlers domain, then they will be sent to the corresponding node.
 func (g *Gossiper) distributeHyperlinks(hyperlinkPackage *webcrawler.HyperlinkPackage) {
 	links := hyperlinkPackage.Links
 	domains := map[dht.NodeState][]string{}
 	for _, hyperlink := range links {
-		hash := dht.GenerateKeyHash(hyperlink)
+		hash := dht_util.GenerateKeyHash(hyperlink)
 		closestNodes := g.LookupNodes(hash)
 		if len(closestNodes) == 0 {
 			fmt.Println("LookupNodes returned an empty list... Retrying in 5 seconds.")
@@ -141,42 +165,101 @@ func (g *Gossiper) distributeHyperlinks(hyperlinkPackage *webcrawler.HyperlinkPa
 				},
 			}
 		} else {
-			// url belong to another crawlers domain.
+			// Url belong to another crawlers domain.
 			g.batchSendURLS(&owner, hyperlinks)
 		}
 	}
 }
 
-// Save each keyword of a url at the responsible node
+func (g *Gossiper) saveOutboundLinksInDHT(outboundLinks *webcrawler.OutBoundLinksPackage) {
+	id := dht_util.GenerateKeyHash(outboundLinks.Url)
+	kClosest := g.LookupNodes(id)
+	if len(kClosest) == 0 {
+		fmt.Printf("Could not perform store since no neighbours found.\n")
+		return
+	}
+	closest := kClosest[0]
+
+	s := make([]interface{}, len(outboundLinks.OutBoundLinks))
+	for i, v := range outboundLinks.OutBoundLinks {
+		outBoundLink := &webcrawler.OutBoundLinksPackage{
+			Url: outboundLinks.Url,
+			OutBoundLinks: []string{v},
+		}
+		s[i] = outBoundLink
+	}
+	batches := g.createUDPBatches(closest, s)
+	for _, batch := range batches {
+		tmp := make([]*webcrawler.OutBoundLinksPackage, len(batch.([]interface{})))
+		for k, b := range batch.([]interface{}) {
+			tmp[k] = b.(*webcrawler.OutBoundLinksPackage)
+		}
+		packetBytes, err := protobuf.Encode(&BatchMessage{OutBoundLinksPackages: tmp})
+		if err != nil {
+			panic(err)
+		}
+		err = g.sendStore(closest, id, packetBytes, dht.LinksBucket)
+		if err != nil {
+			fmt.Printf("Failed to store key.\n")
+		}
+	}
+}
+
+func (g *Gossiper) saveCitationsInDHT(citationsPackage *webcrawler.CitationsPackage){
+	destinations := make(map[dht.NodeState][]*webcrawler.Citations)
+	for _, citation := range citationsPackage.CitationsList {
+		citation := citation //create a copy of the variable
+		id := dht_util.GenerateKeyHash(citation.Url)
+		kClosest := g.LookupNodes(id)
+		if len(kClosest) == 0 {
+			fmt.Printf("Could not perform store since no neighbours found.\n")
+			break
+		}
+		closest := kClosest[0]
+		val, _ := destinations[*closest]
+		destinations[*closest] = append(val, &citation)
+	}
+
+	for dest, batch := range destinations {
+		if dest.Address == g.address {
+			// This node is the destination
+			packetBytes, err := protobuf.Encode(&BatchMessage{Citations: batch})
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			msg := g.newDHTStore(dest.NodeID, packetBytes, dht.CitationsBucket)
+			g.replyStore(msg)
+			continue
+		}
+		g.batchSendCitations(&dest, batch)
+	}
+}
+
+// Save each keyword of a Url at the responsible node
 func (g *Gossiper) saveKeywordsInDHT(indexPackage *webcrawler.IndexPackage) {
 	frequencies, url := indexPackage.KeywordFrequencies, indexPackage.Url
-	destinations := map[dht.NodeState][]*dht.KeywordToURLMap{}
+	destinations := map[dht.NodeState][]*webcrawler.KeywordToURLMap{}
 	for k, v := range frequencies {
-		keyHash := dht.GenerateKeyHash(k)
+		keyHash := dht_util.GenerateKeyHash(k)
 		kClosest := g.LookupNodes(keyHash)
 		if len(kClosest) == 0 {
 			fmt.Printf("Could not perform store since no neighbours found.\n")
 			break
 		}
 		closest := kClosest[0]
-		urlToKeywordMap := &dht.KeywordToURLMap{
-			Keyword: k,
-			LinkData:        map[string]int{url: v},
+		urlToKeywordMap := &webcrawler.KeywordToURLMap{
+			Keyword:  k,
+			LinkData: map[string]int{url: v},
 		}
-		val, found := destinations[*closest]
-		if !found {
-			destinations[*closest] = []*dht.KeywordToURLMap{
-				urlToKeywordMap,
-			}
-		} else {
-			destinations[*closest] = append(val, urlToKeywordMap)
-		}
+		val, _ := destinations[*closest]
+		destinations[*closest] = append(val, urlToKeywordMap)
 	}
 
 	for dest, batch := range destinations {
 		if dest.Address == g.address {
 			// This node is the destination
-			packetBytes, err := protobuf.Encode(&dht.BatchMessage{List: batch})
+			packetBytes, err := protobuf.Encode(&BatchMessage{UrlMapList: batch})
 			if err != nil {
 				fmt.Println(err)
 				return
@@ -190,7 +273,7 @@ func (g *Gossiper) saveKeywordsInDHT(indexPackage *webcrawler.IndexPackage) {
 }
 
 // Saves the hash of a page in the DHT. This is used to prevent duplicate crawling of the same page.
-// The reason why we hash the content instead of the url is because there might be different urls which points to the same page.
+// The reason why we hash the content instead of the Url is because there might be different urls which points to the same page.
 func (g *Gossiper) savePageHashInDHT(pageHash *webcrawler.PageHashPackage) {
 	kClosest := g.LookupNodes(pageHash.Hash)
 	if len(kClosest) == 0 {

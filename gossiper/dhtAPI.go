@@ -1,6 +1,7 @@
 package gossiper
 
 import (
+	"github.com/mvidigueira/Peerster/dht_util"
 	"reflect"
 	"time"
 
@@ -10,7 +11,7 @@ import (
 // LookupNodes looks for the closest nodes to a specific id (up to k nodes).
 // This id can represent a nodeID or a key hash.
 // Unlike LookupValue, it does not stop early if it encounters a node with the key stored.
-func (g *Gossiper) LookupNodes(id dht.TypeID) (closest []*dht.NodeState) {
+func (g *Gossiper) LookupNodes(id dht_util.TypeID) (closest []*dht.NodeState) {
 	snsa := dht.NewSafeNodeStateArray(id)
 	results := g.bucketTable.alphaClosest(id, 3)
 	snsa.InsertArray(results, g.dhtMyID)
@@ -116,7 +117,7 @@ func makeSelectCases(chans []chan []*dht.NodeState, timeoutSec int) (cases []ref
 // LookupValue looks for the closest nodes to a specific id (up to k nodes).
 // This id can represent a nodeID or a key hash.
 // Unlike LookupValue, it does not stop early if it encounters a node with the key stored.
-func (g *Gossiper) LookupValue(id dht.TypeID, dbBucket string) (data []byte, found bool) {
+func (g *Gossiper) LookupValue(id dht_util.TypeID, dbBucket string) (data []byte, found bool) {
 	if data, found = g.dhtDb.Retrieve(id, dbBucket); found {
 		return
 	}
@@ -227,7 +228,7 @@ func makeSelectCasesValue(chans []chan *dht.Message, timeoutSec int) (cases []re
 }
 
 // StoreInDHT - stores 'data' with key 'key' and type 'storeType' in the DHT
-func (g *Gossiper) StoreInDHT(key dht.TypeID, data []byte, storeType string) {
+func (g *Gossiper) StoreInDHT(key dht_util.TypeID, data []byte, storeType string) {
 	closest := g.LookupNodes(key)
 	for _, node := range closest {
 		g.sendStore(node, key, data, storeType)

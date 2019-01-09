@@ -1,6 +1,9 @@
 package gossiper
 
-import "github.com/mvidigueira/Peerster/dht"
+import (
+	"github.com/mvidigueira/Peerster/dht"
+	"github.com/mvidigueira/Peerster/dht_util"
+)
 
 const bucketSize = 20
 
@@ -36,12 +39,12 @@ func (b *bucket) updateNode(ns *dht.NodeState) (changed bool) {
 }
 
 type bucketTable struct {
-	MyNodeID dht.TypeID
-	Buckets  [dht.IDByteSize * 8]*bucket
+	MyNodeID dht_util.TypeID
+	Buckets  [dht_util.IDByteSize * 8]*bucket
 }
 
-func newBucketTable(myNodeID dht.TypeID, g *Gossiper) *bucketTable {
-	buckets := [dht.IDByteSize * 8]*bucket{}
+func newBucketTable(myNodeID dht_util.TypeID, g *Gossiper) *bucketTable {
+	buckets := [dht_util.IDByteSize * 8]*bucket{}
 	for i := range buckets {
 		buckets[i] = newBucket(g)
 	}
@@ -50,13 +53,13 @@ func newBucketTable(myNodeID dht.TypeID, g *Gossiper) *bucketTable {
 
 func (bt *bucketTable) updateNode(ns *dht.NodeState) (changed bool) {
 	clb := dht.CommonLeadingBits(bt.MyNodeID, ns.NodeID)
-	if clb < dht.IDByteSize*8 {
+	if clb < dht_util.IDByteSize*8 {
 		return bt.Buckets[clb].updateNode(ns)
 	}
 	return false
 }
 
-func (bt *bucketTable) alphaClosest(target dht.TypeID, alpha int) (results []*dht.NodeState) {
+func (bt *bucketTable) alphaClosest(target dht_util.TypeID, alpha int) (results []*dht.NodeState) {
 	results = make([]*dht.NodeState, 0)
 	for _, bucket := range bt.Buckets {
 		for _, node := range bucket.Nodes {

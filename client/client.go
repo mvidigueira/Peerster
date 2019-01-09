@@ -3,14 +3,13 @@ package main
 import (
 	"encoding/hex"
 	"fmt"
+	"github.com/mvidigueira/Peerster/dht_util"
 	"io/ioutil"
 	"log"
 	"net"
 	"os"
 	"protobuf"
 	"strings"
-
-	"github.com/mvidigueira/Peerster/dht"
 
 	"github.com/mvidigueira/Peerster/dto"
 	"github.com/mvidigueira/Peerster/fileparsing"
@@ -70,13 +69,13 @@ func (c *Client) sendUDP() {
 	if c.store != "" {
 		tmp := strings.Split(c.store, ":")
 		key, value := strings.ToLower(tmp[0]), tmp[1]
-		hash := dht.GenerateKeyHash(key)
+		hash := dht_util.GenerateKeyHash(key)
 		idB, err := hex.DecodeString(hex.EncodeToString(hash[:]))
 		if err != nil {
 			fmt.Print(err)
 			return
 		}
-		id, ok := dht.ConvertToTypeID(idB)
+		id, ok := dht_util.ConvertToTypeID(idB)
 		if !ok {
 			fmt.Print(err)
 			return
@@ -104,7 +103,7 @@ func (c *Client) sendUDP() {
 			fmt.Print(err)
 			return
 		}
-		id, ok := dht.ConvertToTypeID(idB)
+		id, ok := dht_util.ConvertToTypeID(idB)
 		if !ok {
 			fmt.Print(err)
 			return

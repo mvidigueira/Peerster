@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"github.com/mvidigueira/Peerster/dht_util"
 	"log"
 	"net"
 	"protobuf"
@@ -851,12 +852,12 @@ func (fts *FileToSearch) GetKeywords() []string {
 }
 
 type DHTLookup struct {
-	Node *dht.TypeID
+	Node *dht_util.TypeID
 	Key  *string
 }
 
 type DHTStore struct {
-	Key   *dht.TypeID
+	Key   *dht_util.TypeID
 	Type  string
 	Value []byte
 }

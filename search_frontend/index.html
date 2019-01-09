@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <!-- Required meta tags -->
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+        <!-- Bootstrap CSS -->
+        <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css" integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous">
+        <style>
+            html,
+            body {
+                height: 100%
+            }
+            span{
+                margin: -0.12em;
+                padding: 0;
+                border: 0;
+            }
+            .blue{
+                color: #004cff;
+            }
+            .red{
+                color: #ff1300;
+            }
+            .yellow{
+                color: #ffda52;
+            }
+            .green{
+                color: #00a300;
+            }
+            .logo{
+                font-size: 6em;
+                font-family: "serif";
+            }
+            .search {
+                margin-top: 15%;
+            }
+            .stats{
+                font-size: 0.7em;
+                margin-bottom: 1%;
+            }
+            .resultLink{
+
+            }
+
+            #results {
+                padding-top: 1em;
+            }
+
+            #results ul {
+                padding: 0;
+                list-style-type: none;
+            }
+
+
+            #giants{
+                margin-top: 1.5em;
+                color: #006621;
+                font-weight: bold;
+            }
+        </style>
+
+
+        <script src="https://code.jquery.com/jquery-3.3.1.min.js" crossorigin="anonymous"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.3/umd/popper.min.js" integrity="sha384-ZMP7rVo3mIykV+2+9J3UJ46jBk0WLaUAdn689aCwoqbBJiSnjAK/l8WvCWPIPm49" crossorigin="anonymous"></script>
+        <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js" integrity="sha384-ChfqqxuZUCnJSK3+MXmPNIyE6ZbWh2IMqE241rYiqJxyMiZ6OW/JmZQ5stwEULTy" crossorigin="anonymous"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-table/1.12.1/bootstrap-table.min.js"></script>
+
+        <script>
+            const domain = "http://en.wikipedia.org";
+
+            function search(){
+                console.log("searching");
+                var query = {query: $('#search-field').val()};
+                $.getJSON("/search", query).done(
+                    function (data) {
+                        console.log(data);
+                        var results = $("#results ul");
+                        results.html("");
+                        $("#giants").hide();
+                        var search = $('.search');
+                        search.animate({"margin-top": "1%"}, 100, function () {
+                            $.map(data.Results, function(d, i){
+                                var name = d.Result.Link.slice("/wiki/".length).replace(/_/g, " ");
+                                var link = domain+d.Result.Link;
+                                var simscore = d.Result.SimScore.toFixed(2);
+                                var rank = d.Rank.toFixed(2);
+                                var pageRank = d.PageRank.toFixed(2);
+                                results.append(
+                                    `<li>
+                                            <a class="resultLink" href='${link}'>${name}</a>
+                                            <p class="stats"> (simscore: ${simscore}, pageRank: ${pageRank}, rank: ${rank})</p>
+                                     </li>
+                                    `
+                                );
+                            });
+                            if (data.Results == null) {
+                                results.append("<li><p><h4>Results not found :(</h4></p></li>");
+                            }
+                        });
+                    }
+                )
+            }
+
+            $(document).ready(function() {
+                $('#search-button').on('click', function (e) {
+                    e.preventDefault();
+                    search();
+                });
+
+                $(document).keypress(function(event) {
+                    if (event.key === "Enter") {
+                        event.preventDefault();
+                        console.log("enter");
+                        search();
+                    }
+                });
+            });
+        </script>
+    </head>
+    <body>
+        <div class="container">
+            <div class="row justify-content-center">
+            <div class="search col-6">
+                <h1 class="logo text-center">
+                    <span class="blue">P</span>
+                    <span class="red">e</span>
+                    <span class="yellow">e</span>
+                    <span class="blue">r</span>
+                    <span class="green">s</span>
+                    <span class="red">t</span>
+                    <span class="yellow">e</span>
+                    <span class="green">r</span>
+                </h1>
+                <div class="input-group shadow-sm ">
+                    <input type="text" class="form-control" id="search-field">
+                    <div class="input-group-append">
+                        <button class="btn btn-primary" id="search-button" type="button">Search</button>
+                    </div>
+                </div>
+                <div class="text-center" id="giants">
+                    <p>Stand on the toes of giants</p>
+                </div>
+                <div id="results">
+                    <ul>
+
+                    </ul>
+                </div>
+            </div>
+            </div>
+        </div>
+    </body>
+</html>
+
