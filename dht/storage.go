@@ -62,8 +62,8 @@ func (s *Storage) Retrieve(key TypeID, bucket string) (data []byte, ok bool) {
 
 func (s *Storage) AddLinksForKeyword(key string, newKeywordToUrlMap webcrawler.KeywordToURLMap) (ok bool) {
 	ok = true
- 	idArray := GenerateKeyHash(key)
- 	id := idArray[:]
+	idArray := GenerateKeyHash(key)
+	id := idArray[:]
 	var err error
 
 	s.Db.Update(func(tx *bolt.Tx) error {
@@ -86,6 +86,49 @@ func (s *Storage) AddLinksForKeyword(key string, newKeywordToUrlMap webcrawler.K
 			panic(err)
 		}
 		err = b.Put(id, data)
+		return err
+	})
+
+	if err != nil {
+		ok = false
+	}
+	return
+}
+
+func (s *Storage) BulkAddLinksForKeyword(urlMaps []*webcrawler.KeywordToURLMap) (ok bool) {
+	ok = true
+
+	var err error
+
+	s.Db.Batch(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(KeywordsBucket))
+
+		for _, newKeywordToUrlMap := range urlMaps {
+			key := newKeywordToUrlMap.Keyword
+			idArray := GenerateKeyHash(key)
+			id := idArray[:]
+
+			var keywordMap webcrawler.KeywordToURLMap
+			data := b.Get(id)
+			if data == nil {
+				keywordMap = *newKeywordToUrlMap
+			} else {
+				err = protobuf.Decode(data, &keywordMap)
+				if err != nil {
+					panic(err)
+				}
+				for k, val := range newKeywordToUrlMap.LinkData {
+					keywordMap.LinkData[k] = val
+				}
+			}
+
+			data, err := protobuf.Encode(&keywordMap)
+			if err != nil {
+				panic(err)
+			}
+			err = b.Put(id, data)
+		}
+
 		return err
 	})
 

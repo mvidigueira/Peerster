@@ -116,18 +116,19 @@ func (g *Gossiper) replyStore(msg *dht.Message) {
 		go func() {
 			batchTemp := &BatchMessage{}
 			protobuf.Decode(msg.Store.Data, batchTemp)
-			for _, item := range batchTemp.UrlMapList {
-				stores++
-				ok := g.dhtDb.AddLinksForKeyword(item.Keyword, *item)
-				if !ok {
-					fmt.Printf("Failed to add keywords.\n")
-				}
-			}
+			//for _, item := range batchTemp.UrlMapList {
+			//	stores++
+			//	ok := g.dhtDb.AddLinksForKeyword(item.Keyword, *item)
+			//	if !ok {
+			//		fmt.Printf("Failed to add keywords.\n")
+			//	}
+			//}
+			g.dhtDb.BulkAddLinksForKeyword(batchTemp.UrlMapList)
 		}()
 	case dht.PageHashBucket:
 		go func() {
 			var err error
-			g.dhtDb.Db.Update(func(tx *bbolt.Tx) error {
+			g.dhtDb.Db.Batch(func(tx *bbolt.Tx) error {
 				b := tx.Bucket([]byte(storeType))
 				err = b.Put(msg.Store.Key[:], msg.Store.Data)
 				return err
@@ -155,7 +156,7 @@ func (g *Gossiper) replyStore(msg *dht.Message) {
 
 		outboundPackage := &webcrawler.OutBoundLinksPackage{batchTemp.OutBoundLinksPackages[0].Url, links}
 		data, err := protobuf.Encode(outboundPackage)
-		g.dhtDb.Db.Update(func(tx *bbolt.Tx) error {
+		g.dhtDb.Db.Batch(func(tx *bbolt.Tx) error {
 			b := tx.Bucket([]byte(dht.LinksBucket))
 			err = b.Put(id, data)
 			return err
@@ -176,7 +177,7 @@ func (g *Gossiper) replyStore(msg *dht.Message) {
 			if err != nil {
 				panic(err)
 			}
-			g.dhtDb.Db.Update(func(tx *bbolt.Tx) error {
+			g.dhtDb.Db.Batch(func(tx *bbolt.Tx) error {
 				b := tx.Bucket([]byte(dht.CitationsBucket))
 
 			itemLoop:
