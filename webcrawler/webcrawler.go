@@ -2,7 +2,6 @@ package webcrawler
 
 import (
 	"fmt"
-	"github.com/mvidigueira/Peerster/dht_util"
 	"hash"
 	"hash/fnv"
 	"log"
@@ -12,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mvidigueira/Peerster/dht_util"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/bbalet/stopwords"
@@ -67,7 +68,7 @@ func (wc *Crawler) crawl() {
 	go func() {
 		for {
 			select {
-			case <-time.After(time.Second * 1):
+			case <-time.After(time.Millisecond * 300):
 				if len(wc.crawlQueue) == 0 {
 					continue
 				}
@@ -84,6 +85,7 @@ func (wc *Crawler) crawl() {
 
 				// Lookup the page hash in the DHT in order to prevent parsing of a page which has already been crawled by another node
 				// This could be the case since the same page could be pointed to by several URLs.
+				fmt.Println("SEND LOOKUK")
 				resChan := make(chan bool)
 				wc.OutChan <- &CrawlerPacket{
 					PageHash: &PageHashPackage{
@@ -98,11 +100,12 @@ func (wc *Crawler) crawl() {
 					fmt.Printf("Page has already been crawled, skipping.\n")
 					continue
 				}
+				fmt.Println("SEND OUTBOUND")
 
 				//Store the outbound links of this page
 				wc.OutChan <- &CrawlerPacket{
 					OutBoundLinks: &OutBoundLinksPackage{
-						Url: nextPage,
+						Url:           nextPage,
 						OutBoundLinks: page.Hyperlinks,
 					},
 				}
@@ -111,11 +114,13 @@ func (wc *Crawler) crawl() {
 				for _, link := range page.Hyperlinks {
 					citationsPackage.CitationsList = append(citationsPackage.CitationsList, Citations{link, []string{nextPage}})
 				}
+				fmt.Println("SEND CITATION")
 
 				//Store the pages being cited by this page
 				wc.OutChan <- &CrawlerPacket{
 					CitationsPackage: citationsPackage,
 				}
+				fmt.Println("FILTER HYPER")
 
 				// Filter out urls that already has been crawler by this crawler
 				filteredHyperLinks := make([]string, 0, len(page.Hyperlinks))
@@ -124,6 +129,7 @@ func (wc *Crawler) crawl() {
 						filteredHyperLinks = append(filteredHyperLinks, hyperlink)
 					}
 				}
+				fmt.Println("SEND HYPER")
 
 				// Send the links found on the page to be distributed evenly between the availible crawlers
 				wc.OutChan <- &CrawlerPacket{
@@ -131,6 +137,7 @@ func (wc *Crawler) crawl() {
 						Links: filteredHyperLinks,
 					},
 				}
+				fmt.Println("INDEX PAGEAHAS")
 
 				// Send the hash of the page content to be stored in the DHT
 				wc.OutChan <- &CrawlerPacket{
@@ -141,12 +148,16 @@ func (wc *Crawler) crawl() {
 				}
 
 				// Send words to be indexed
+				fmt.Println("INDEX KEYWORDS")
+
 				wc.OutChan <- &CrawlerPacket{
 					IndexPackage: &IndexPackage{
 						KeywordFrequencies: page.KeywordFrequencies,
 						Url:                nextPage,
 					},
 				}
+
+				fmt.Println("FINISHED CRAWL")
 			}
 		}
 	}()
@@ -250,7 +261,7 @@ func (wc *Crawler) extractText(text string) string {
 
 // Removes unwanted parts of wikipedia HTML pages
 func (wc *Crawler) cleanPage(doc goquery.Document) goquery.Document {
-	toRemove := []string{"script", "head", "style","img","span","div[id=mw-navigation]", "div[id=toc]", "div[id=Further_reading]",  "div[id=External_links]", "div[id=catlinks]", "div[id=footer]", "div[class=nowraplinks]"}
+	toRemove := []string{"script", "head", "style", "img", "span", "div[id=mw-navigation]", "div[id=toc]", "div[id=Further_reading]", "div[id=External_links]", "div[id=catlinks]", "div[id=footer]", "div[class=nowraplinks]"}
 	for _, element := range toRemove {
 		doc.Find(element).Each(func(i int, el *goquery.Selection) {
 			el.Remove()
