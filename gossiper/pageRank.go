@@ -89,7 +89,7 @@ func (g *Gossiper) setRank(urlInfo webcrawler.OutBoundLinksPackage, pageInfo Ran
 	if err != nil {
 		panic(err)
 	}
-	g.dhtDb.Db.Update(func(tx *bbolt.Tx) error {
+	g.dhtDb.Db.Batch(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(dht.PageRankBucket))
 		err = b.Put(id[:], data)
 		if err != nil {
@@ -103,7 +103,6 @@ func (g *Gossiper) setRank(urlInfo webcrawler.OutBoundLinksPackage, pageInfo Ran
 
 func (g *Gossiper) batchRankUpdates(urlInfo *webcrawler.OutBoundLinksPackage, pageInfo *RankInfo){
 	destinations := make(map[dht.NodeState][]*RankUpdate)
-	
 	for _, outboundLink := range urlInfo.OutBoundLinks {
 		id := dht_util.GenerateKeyHash(outboundLink)
 		kClosest := g.LookupNodes(id)

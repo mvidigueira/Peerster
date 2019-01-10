@@ -188,6 +188,8 @@ func (wc *Crawler) crawlUrl(urlString string) *PageInfo {
 	return &PageInfo{Hyperlinks: wc.removeDuplicates(urls), KeywordFrequencies: wc.keywordFrequency(words), Hash: dht_util.GenerateKeyHash(rawDoc.Text())}
 }
 
+const MinWordLen = 3
+
 // Extracts words from a wikipedia document
 func (wc *Crawler) extractWords(doc goquery.Document) []string {
 	words := []string{}
@@ -208,7 +210,7 @@ func (wc *Crawler) extractWords(doc goquery.Document) []string {
 		validWord := regexp.MustCompile(`^[a-zA-Z]+$`)
 		for _, word := range tokens {
 			// We make the assumption that most "valuable" words have a length greater than 2.
-			if len(word) < 3 {
+			if len(word) < MinWordLen {
 				continue
 			}
 			if !validWord.MatchString(word) {

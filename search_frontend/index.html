@@ -29,7 +29,7 @@
             .green{
                 color: #00a300;
             }
-            .logo{
+            #logo{
                 font-size: 6em;
                 font-family: "serif";
             }
@@ -59,6 +59,66 @@
                 color: #006621;
                 font-weight: bold;
             }
+
+            /*Spinner (https://loading.io/css/)*/
+
+            .lds-ellipsis {
+                display: none;
+                position: relative;
+                width: 64px;
+                height: 64px;
+            }
+            .lds-ellipsis div {
+                position: absolute;
+                top: 27px;
+                width: 11px;
+                height: 11px;
+                border-radius: 50%;
+                background: #ff1300;
+                animation-timing-function: cubic-bezier(0, 1, 1, 0);
+            }
+            .lds-ellipsis div:nth-child(1) {
+                left: 6px;
+                animation: lds-ellipsis1 0.6s infinite;
+            }
+            .lds-ellipsis div:nth-child(2) {
+                left: 6px;
+                animation: lds-ellipsis2 0.6s infinite;
+            }
+            .lds-ellipsis div:nth-child(3) {
+                left: 26px;
+                animation: lds-ellipsis2 0.6s infinite;
+            }
+            .lds-ellipsis div:nth-child(4) {
+                left: 45px;
+                animation: lds-ellipsis3 0.6s infinite;
+            }
+            @keyframes lds-ellipsis1 {
+                0% {
+                    transform: scale(0);
+                }
+                100% {
+                    transform: scale(1);
+                }
+            }
+            @keyframes lds-ellipsis3 {
+                0% {
+                    transform: scale(1);
+                }
+                100% {
+                    transform: scale(0);
+                }
+            }
+            @keyframes lds-ellipsis2 {
+                0% {
+                    transform: translate(0, 0);
+                }
+                100% {
+                    transform: translate(19px, 0);
+                }
+            }
+
+
         </style>
 
 
@@ -73,14 +133,17 @@
             function search(){
                 console.log("searching");
                 var query = {query: $('#search-field').val()};
+                var results = $("#results ul");
+                results.html("");
+                $("#giants").hide();
+                $(".lds-ellipsis").show();
                 $.getJSON("/search", query).done(
                     function (data) {
+                        $(".lds-ellipsis").hide();
                         console.log(data);
-                        var results = $("#results ul");
-                        results.html("");
-                        $("#giants").hide();
+                        $("#logo").animate({"font-size": "3em"}, 100)
                         var search = $('.search');
-                        search.animate({"margin-top": "1%"}, 100, function () {
+                        search.animate({"margin-top": "1%"}, 200, function () {
                             $.map(data.Results, function(d, i){
                                 var name = d.Result.Link.slice("/wiki/".length).replace(/_/g, " ");
                                 var link = domain+d.Result.Link;
@@ -104,6 +167,8 @@
             }
 
             $(document).ready(function() {
+                $(".lds-ellipsis").hide();
+
                 $('#search-button').on('click', function (e) {
                     e.preventDefault();
                     search();
@@ -123,7 +188,7 @@
         <div class="container">
             <div class="row justify-content-center">
             <div class="search col-6">
-                <h1 class="logo text-center">
+                <h1 id="logo" class="text-center">
                     <span class="blue">P</span>
                     <span class="red">e</span>
                     <span class="yellow">e</span>
@@ -138,6 +203,9 @@
                     <div class="input-group-append">
                         <button class="btn btn-primary" id="search-button" type="button">Search</button>
                     </div>
+                </div>
+                <div class="row justify-content-center ">
+                    <div class="lds-ellipsis"><div></div><div></div><div></div><div></div></div>
                 </div>
                 <div class="text-center" id="giants">
                     <p>Stand on the toes of giants</p>

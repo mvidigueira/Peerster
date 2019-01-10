@@ -35,7 +35,8 @@ func (g *Gossiper) lookupFinalPhase(snsa *dht.SafeNodeStateArray) (closest []*dh
 		go g.lookupSingle(node, snsa, chans[i])
 	}
 
-	cases := makeSelectCases(chans, 1)
+	cases, t := makeSelectCases(chans, 1)
+	defer t.Stop()
 	closer := false
 	answered := 0
 	for len(unqueried) != 0 {
@@ -74,7 +75,8 @@ func (g *Gossiper) lookupRound(snsa *dht.SafeNodeStateArray) (closest []*dht.Nod
 
 	answered := 0
 	closer := false
-	cases := makeSelectCases(chans, 1)
+	cases, t := makeSelectCases(chans, 1)
+	t.Stop()
 	for len(closestNodes) != 0 {
 		chosen, v, _ := reflect.Select(cases)
 		if chosen == (len(cases) - 1) { //timeout
@@ -104,12 +106,12 @@ func (g *Gossiper) lookupSingle(ns *dht.NodeState, snsa *dht.SafeNodeStateArray,
 	results <- v.NodeReply.NodeStates
 }
 
-func makeSelectCases(chans []chan []*dht.NodeState, timeoutSec int) (cases []reflect.SelectCase) {
+func makeSelectCases(chans []chan []*dht.NodeState, timeoutSec int) (cases []reflect.SelectCase, t *time.Ticker) {
 	cases = make([]reflect.SelectCase, len(chans))
 	for i, ch := range chans {
 		cases[i] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(ch)}
 	}
-	t := time.NewTicker(time.Duration(timeoutSec) * time.Second)
+	t = time.NewTicker(time.Duration(timeoutSec) * time.Second)
 	cases = append(cases, reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(t.C)})
 	return
 }
@@ -138,7 +140,8 @@ func (g *Gossiper) lookupFinalPhaseValue(snsa *dht.SafeNodeStateArray, dbBucket 
 		go g.lookupSingleValue(node, snsa, chans[i], dbBucket)
 	}
 
-	cases := makeSelectCasesValue(chans, 1)
+	cases, t := makeSelectCasesValue(chans, 1)
+	defer t.Stop()
 	closer := false
 	answered := 0
 	for len(unqueried) != 0 {
@@ -181,7 +184,8 @@ func (g *Gossiper) lookupRoundValue(snsa *dht.SafeNodeStateArray, dbBucket strin
 
 	answered := 0
 	closer := false
-	cases := makeSelectCasesValue(chans, 1)
+	cases, t := makeSelectCasesValue(chans, 1)
+	defer t.Stop()
 	for len(closestNodes) != 0 {
 		chosen, v, _ := reflect.Select(cases)
 		if chosen == (len(cases) - 1) { //timeout
@@ -217,12 +221,12 @@ func (g *Gossiper) lookupSingleValue(ns *dht.NodeState, snsa *dht.SafeNodeStateA
 	msg <- v
 }
 
-func makeSelectCasesValue(chans []chan *dht.Message, timeoutSec int) (cases []reflect.SelectCase) {
+func makeSelectCasesValue(chans []chan *dht.Message, timeoutSec int) (cases []reflect.SelectCase, t *time.Ticker) {
 	cases = make([]reflect.SelectCase, len(chans))
 	for i, ch := range chans {
 		cases[i] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(ch)}
 	}
-	t := time.NewTicker(time.Duration(timeoutSec) * time.Second)
+	t = time.NewTicker(time.Duration(timeoutSec) * time.Second)
 	cases = append(cases, reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(t.C)})
 	return
 }
