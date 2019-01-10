@@ -3,12 +3,13 @@ package gossiper
 import (
 	"crypto/ecdsa"
 	"fmt"
-	"github.com/dedis/protobuf"
 	"log"
 	"math/rand"
 	"net"
 	"strconv"
 	"time"
+
+	"github.com/dedis/protobuf"
 
 	"github.com/mvidigueira/Peerster/dht_util"
 
@@ -385,9 +386,9 @@ func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, c
 			}
 		case "hyperlinkmessage":
 			for _, link := range packet.HyperlinkMessage.Links {
-				err := g.dhtDb.UpdateQueue([]byte(link))
+				err := g.dhtDb.UpdateCrawlQueue([]byte(link))
 				if err != nil {
-					log.Fatal("Error saving link")
+					log.Println("Error saving link")
 				}
 			}
 			if !g.webCrawler.IsCrawling {

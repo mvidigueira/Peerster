@@ -183,7 +183,9 @@ func (s Storage) Delete(key TypeID, bucket string) (err error) {
 	return err
 }
 
-func (s Storage) UpdateQueue(data []byte) (err error) {
+// All methods below is used by the web crawler to save it's state in order to be able to continue crawling after shutdown/crash.
+
+func (s Storage) UpdateCrawlQueue(data []byte) (err error) {
 	err = s.Db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte("crawlQueue"))
 		id, _ := b.NextSequence()
@@ -194,7 +196,8 @@ func (s Storage) UpdateQueue(data []byte) (err error) {
 	return err
 }
 
-func (s Storage) GetQueueIndex() (uint64, bool) {
+// Returns the crawl queue pointer
+func (s Storage) CrawlQueueHeadPointer() (uint64, bool) {
 	queueHash := GenerateKeyHash(queueCountID)
 	val, found := s.Retrieve(queueHash, "queueIndex")
 	if !found {
@@ -204,6 +207,7 @@ func (s Storage) GetQueueIndex() (uint64, bool) {
 	return queue, found
 }
 
+// Returns the url pointed to by the crawl queue pointer.
 func (s Storage) CrawlQueueHead() string {
 
 	// Get sequence number of queue head
@@ -230,6 +234,7 @@ func (s Storage) CrawlQueueHead() string {
 	return string(head)
 }
 
+// Saves a bloom filter to dht.
 func (s Storage) SaveBloomFilter(bloomFilter *bloomfilter.BloomFilter) {
 	bytes, err := protobuf.Encode(bloomFilter)
 	if err != nil {
@@ -239,6 +244,7 @@ func (s Storage) SaveBloomFilter(bloomFilter *bloomfilter.BloomFilter) {
 	s.Put(key, bytes, bloomFilterStateID)
 }
 
+// Returns old bloom filter from dht.
 func (s Storage) GetBloomFilter() *bloomfilter.BloomFilter {
 	// Restore bloom filter
 	bloomFilterHash := GenerateKeyHash(bloomFilterStateID)
@@ -249,22 +255,17 @@ func (s Storage) GetBloomFilter() *bloomfilter.BloomFilter {
 	bloomFilter := &bloomfilter.BloomFilter{}
 	err := protobuf.Decode(bloomFilterBytes, bloomFilter)
 	if err != nil {
-		log.Fatal("error decoign bloom filter")
+		log.Fatal("error decoding bloom filter")
 	}
 	return bloomFilter
 }
 
-func (s Storage) DeleteCrawlHead() error {
-	index, found := s.GetQueueIndex()
+// Deletes the url pointed to by the crawl queue index pointer from the dht.
+func (s Storage) DeleteCrawlQueueHead() error {
+	index, found := s.CrawlQueueHeadPointer()
 	if !found {
 		log.Println("queue index not found.")
 	}
 	newURLHash := sha1.Sum(Itob(int(index) - 1))
 	return s.Delete(newURLHash, "crawlQueue")
-}
-
-func Itob(v int) []byte {
-	b := make([]byte, 8)
-	binary.BigEndian.PutUint64(b, uint64(v))
-	return b
 }

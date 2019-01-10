@@ -4,6 +4,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"math/bits"
@@ -99,4 +100,11 @@ func CommonLeadingBits(id1, id2 TypeID) (inCommon int) {
 	}
 
 	return
+}
+
+// Converts a int to its byte representation
+func Itob(v int) []byte {
+	b := make([]byte, 8)
+	binary.BigEndian.PutUint64(b, uint64(v))
+	return b
 }

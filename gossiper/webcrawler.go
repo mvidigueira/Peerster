@@ -17,7 +17,7 @@ import (
 
 func (g *Gossiper) startCrawler() {
 
-	queue, ok := g.dhtDb.GetQueueIndex()
+	queue, ok := g.dhtDb.CrawlQueueHeadPointer()
 	if !ok {
 		log.Fatal("Queue index not found.")
 	}
@@ -32,7 +32,7 @@ func (g *Gossiper) initiateFreshCrawl() {
 	// Fresh start of crawl, initiate queue from start point if leader.
 	g.webCrawler.Start(nil)
 	if g.webCrawler.Leader {
-		err := g.dhtDb.UpdateQueue([]byte("/wiki/Swedish_Empire"))
+		err := g.dhtDb.UpdateCrawlQueue([]byte("/wiki/Swedish_Empire"))
 		if err != nil {
 			log.Fatal("Error saving root url.")
 		}
@@ -88,7 +88,7 @@ func (g *Gossiper) webCrawlerListenerRoutine() {
 		case packet.Done != nil:
 			// Crawl of page done, get new url from db and feed it to crawler.
 			if packet.Done.Delete {
-				err := g.dhtDb.DeleteCrawlHead()
+				err := g.dhtDb.DeleteCrawlQueueHead()
 				if err != nil {
 					log.Fatal("Error, deleting crawl queue head.")
 				}
@@ -261,7 +261,7 @@ func (g *Gossiper) distributeHyperlinks(packet *webcrawler.HyperlinkPackage) {
 		if owner.Address == g.address {
 			// Send back the urls belonging to this nodes domain
 			for _, link := range hyperlinks {
-				err := g.dhtDb.UpdateQueue([]byte(link))
+				err := g.dhtDb.UpdateCrawlQueue([]byte(link))
 				if err != nil {
 					log.Fatal("Error saving link")
 				}
