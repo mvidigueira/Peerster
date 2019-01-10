@@ -123,9 +123,12 @@ func (g *Gossiper) replyStore(msg *dht.Message) {
 			//		fmt.Printf("Failed to add keywords.\n")
 			//	}
 			//}
-			g.dhtDb.BulkAddLinksForKeyword(batchTemp.UrlMapList)
+			ok := g.dhtDb.BulkAddLinksForKeyword(batchTemp.UrlMapList)
+			if !ok {
+				fmt.Printf("Failed to add keywords.\n")
+			}
 		}()
-	case dht.PageHashBucket:
+case dht.PageHashBucket:
 		go func() {
 			var err error
 			g.dhtDb.Db.Batch(func(tx *bbolt.Tx) error {

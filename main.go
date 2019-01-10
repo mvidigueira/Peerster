@@ -98,6 +98,7 @@ func main() {
 	go srv.ListenAndServe()
 	log.Println("SERVING SEARCH")
 	<-stop
+	log.Printf("Page rank cache hit rate: %.2f\n", g.PageRankCacheHitRate())
 }
 
 func searchHandler(w http.ResponseWriter, r *http.Request) {

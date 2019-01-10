@@ -13,17 +13,45 @@ import (
 
 type rankerCache struct {
 	cache gcache.Cache
+	hits int
+	totalAccesses int
 }
 
+func (g *Gossiper) PageRankCacheHitRate() float64 {
+	cache := g.rankerCache
+	return float64(cache.hits)/float64(cache.totalAccesses)
+}
+
+/*  As described in
+http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.1.4205&rep=rep1&type=pdf
+*/
+
 const (
-	cacheSize     = 10 //TODO: these values are for testing
-	dampingFactor = 0.85
+	cacheSize     = 1000 //TODO: these values are for testing
 	epsilon       = 0.03
-	InitialRank = 1
+	InitialRank   = 1
+	dampingFactor = 0.85
 )
 
+/*
+	Damping factor:
+	The larger the damping factor,
+	the more emphasis the final vector places on citations rather than random
+	factors. A higher damping factor should result in a higher level of accuracy
+	in the PageRank value, but at the cost of requiring more iterations of the
+	algorithm to reach convergence.
+
+	Epsilon:
+	There is a threshold at which reducing the
+	size of the error term to produce a more precise value for the PageRank
+	vector results in little to no change in the relative rankings of individual
+	pages, or the composition of particular percentiles
+
+	Source: https://pdfs.semanticscholar.org/6274/90c3b5d09e3e4546490bf371f7db7c21d553.pdf
+*/
+
 func newRankerCache() (ranker *rankerCache) {
-	gc := gcache.New(cacheSize).LRU().Build()
+	gc := gcache.New(cacheSize).ARC().Build()
 	ranker = &rankerCache{cache: gc}
 	return
 }
@@ -39,10 +67,18 @@ type RankInfo struct {
 	NumberOfOutboundLinks int
 }
 
-//recalculate the Rank of a page taking into account the new information
+//Recalculate the Rank of a page taking into account the new information
 func (g *Gossiper) receiveRankUpdate(update *RankUpdate) {
-	//TODO: invalidate cache
+	//We have received new information about page A,
+	//Now we have to update the ranks of all the pages that
+	//page A pointed to
 	id := dht_util.GenerateKeyHash(update.OutboundLink)
+
+	//Update cache:
+	urlId := dht_util.GenerateKeyHash(update.RankInfo.Url)
+	g.rankerCache.cache.Set(urlId, update.RankInfo)
+
+
 	outboundLinksPackage := g.getOutboundLinksFromDb(id)
 	if outboundLinksPackage == nil {
 		return
@@ -53,6 +89,7 @@ func (g *Gossiper) receiveRankUpdate(update *RankUpdate) {
 		linkInfo := g.getRankFromDatabase(id)
 		if linkInfo != nil {
 			relerr := linkInfo.updatePageRankWithInfo(update.RankInfo, g)
+			//Check that the page rank has not converged yet
 			if relerr > epsilon {
 				linkOutbounds := g.getOutboundLinksFromDb(id)
 				g.setRank(*linkOutbounds, *linkInfo, relerr)
@@ -77,14 +114,18 @@ func (g *Gossiper) getOutboundLinksFromDb(id dht_util.TypeID) (outboundLinksPack
 	return
 }
 
-//called when the node has recalculated its local Rank and wants to store
+//Called when the node has recalculated its local Rank and wants to store it
 //sending updates to the rest of the network as well
 func (g *Gossiper) setRank(urlInfo webcrawler.OutBoundLinksPackage, pageInfo RankInfo, relerr float64) {
-	if relerr < epsilon{
+	if relerr < epsilon {
 		return
 	}
 
 	id := dht_util.GenerateKeyHash(pageInfo.Url)
+
+	//Update cache:
+	g.rankerCache.cache.Set(id, pageInfo)
+
 	data, err := protobuf.Encode(&pageInfo)
 	if err != nil {
 		panic(err)
@@ -101,7 +142,7 @@ func (g *Gossiper) setRank(urlInfo webcrawler.OutBoundLinksPackage, pageInfo Ran
 	g.batchRankUpdates(&urlInfo, &pageInfo)
 }
 
-func (g *Gossiper) batchRankUpdates(urlInfo *webcrawler.OutBoundLinksPackage, pageInfo *RankInfo){
+func (g *Gossiper) batchRankUpdates(urlInfo *webcrawler.OutBoundLinksPackage, pageInfo *RankInfo) {
 	destinations := make(map[dht.NodeState][]*RankUpdate)
 	for _, outboundLink := range urlInfo.OutBoundLinks {
 		id := dht_util.GenerateKeyHash(outboundLink)
@@ -112,7 +153,7 @@ func (g *Gossiper) batchRankUpdates(urlInfo *webcrawler.OutBoundLinksPackage, pa
 		}
 		closest := kClosest[0]
 		val, _ := destinations[*closest]
-		destinations[*closest] = append(val, &RankUpdate{OutboundLink:outboundLink, RankInfo: pageInfo})
+		destinations[*closest] = append(val, &RankUpdate{OutboundLink: outboundLink, RankInfo: pageInfo})
 	}
 
 	for dest, batch := range destinations {
@@ -150,11 +191,11 @@ func (g *Gossiper) batchRankUpdates(urlInfo *webcrawler.OutBoundLinksPackage, pa
 	}
 }
 
-func (page *RankInfo) updatePageRank(g *Gossiper) (float64){
+func (page *RankInfo) updatePageRank(g *Gossiper) float64 {
 	return page.updatePageRankWithInfo(nil, g)
 }
 
-func (page *RankInfo) updatePageRankWithInfo(newInfo *RankInfo, g *Gossiper) (relerr float64){
+func (page *RankInfo) updatePageRankWithInfo(newInfo *RankInfo, g *Gossiper) (relerr float64) {
 	citations := &webcrawler.Citations{}
 	url := page.Url
 	id := dht_util.GenerateKeyHash(url)
@@ -176,6 +217,9 @@ func (page *RankInfo) updatePageRankWithInfo(newInfo *RankInfo, g *Gossiper) (re
 		return 0
 	}
 
+	//PR(A) = (1-d) + d (PR(T1)/C(T1) + ... + PR(Tn)/C(Tn))
+	//Where C(T) is defined as the number of links going out of page T
+
 	inlinkSum := 0.0
 	for _, citation := range citations.CitedBy {
 		rankInfo := newInfo
@@ -186,27 +230,30 @@ func (page *RankInfo) updatePageRankWithInfo(newInfo *RankInfo, g *Gossiper) (re
 			inlinkSum += rankInfo.Rank / float64(rankInfo.NumberOfOutboundLinks+1)
 		}
 	}
+
 	inlinkSum *= dampingFactor
 	newRank := (1 - dampingFactor) + inlinkSum
 	page.Rank = newRank
 
-	relerr = math.Abs(oldRank - newRank)/newRank
+	relerr = math.Abs(oldRank-newRank) / newRank
 	return
 }
 
 //get the Rank of a page
 //first looks in the cache, then in the db, then on the network
 func (g *Gossiper) getRank(id dht_util.TypeID) (rank *RankInfo) {
-	//rankData, err := g.rankerCache.cache.Get(id)
-	//if err == nil {
-	//	Rank = rankData.(*RankInfo)
-	//	return
-	//}
+	g.rankerCache.totalAccesses++
+	rankData, err := g.rankerCache.cache.Get(id)
+	if err == nil {
+		rank = rankData.(*RankInfo)
+		g.rankerCache.hits++
+		return
+	}
 
 	rank = g.getRankFromDatabase(id)
 
 	if rank == nil {
-		data, found := g.LookupValue(id, dht.PageRankBucket) //TODO: batching!
+		data, found := g.LookupValue(id, dht.PageRankBucket) //TODO: batching
 		if found {
 			protobuf.Decode(data, rank)
 			g.rankerCache.cache.Set(id, rank)
