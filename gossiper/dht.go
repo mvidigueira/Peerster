@@ -70,6 +70,7 @@ func (g *Gossiper) sendPing(ns *dht.NodeState) (alive bool) {
 	g.sendUDP(packet, ns.Address)
 
 	t := time.NewTicker(pingTimeout * time.Second)
+	defer t.Stop()
 	for {
 		select {
 		case <-c:
@@ -153,9 +154,9 @@ func (g *Gossiper) replyStore(msg *dht.Message) {
 		id := idArray[:]
 
 		outboundPackage := &webcrawler.OutBoundLinksPackage{batchTemp.OutBoundLinksPackages[0].Url, links}
+		data, err := protobuf.Encode(outboundPackage)
 		g.dhtDb.Db.Update(func(tx *bbolt.Tx) error {
 			b := tx.Bucket([]byte(dht.LinksBucket))
-			data, err := protobuf.Encode(outboundPackage)
 			err = b.Put(id, data)
 			return err
 		})
@@ -406,6 +407,7 @@ func (g *Gossiper) DoSearch(query string) (rankedResults webcrawler.RankedResult
 	}
 
 	simScoreMax := 0.0
+	pageRankMax := 0.0
 	for _, result := range results.Results[:maxResults] {
 		data, found := g.LookupValue(dht_util.GenerateKeyHash(result.Link), dht.PageRankBucket)
 		pageRankVal := 0.0
@@ -421,12 +423,16 @@ func (g *Gossiper) DoSearch(query string) (rankedResults webcrawler.RankedResult
 		if result.SimScore > simScoreMax {
 			simScoreMax = result.SimScore
 		}
+		if pageRankVal > pageRankMax {
+			pageRankMax = pageRankVal
+		}
 		rankedResults.Results = append(rankedResults.Results, &webcrawler.RankedResult{&result, pageRankVal, 0})
 	}
 
 	for _, rankedResult := range rankedResults.Results {
 		rankedResult.Result.SimScore = rankedResult.Result.SimScore / simScoreMax
-		rankedResult.Rank = (1-pageRankWeight)*rankedResult.Result.SimScore + pageRankWeight*rankedResult.PageRank
+		pageRank := rankedResult.PageRank/pageRankMax
+		rankedResult.Rank = (1-pageRankWeight)*rankedResult.Result.SimScore + pageRankWeight*rankedResult.PageRank*pageRank
 	}
 
 	sort.Sort(rankedResults)
