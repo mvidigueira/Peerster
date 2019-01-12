@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/mvidigueira/Peerster/dht_util"
-	"github.com/willf/bloom"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/bbalet/stopwords"
@@ -24,47 +23,32 @@ type Crawler struct {
 	mux  *sync.Mutex
 	mux1 *sync.Mutex
 
-	crawlQueue  []string
-	domain      string
-	InChan      chan *CrawlerPacket
-	OutChan     chan *CrawlerPacket
-	leader      bool
-	bloomFilter *bloom.BloomFilter //*bloomfilter.BloomFilter
-	hasher      hash.Hash64
-	past        map[string]bool
+	crawlQueue []string
+	domain     string
+	InChan     chan *CrawlerPacket
+	OutChan    chan *CrawlerPacket
+	leader     bool
+	hasher     hash.Hash64
+	past       map[string]bool
 }
 
 // PUBLIC API
 
 func New(leader bool) *Crawler {
 	return &Crawler{
-		crawlQueue:  []string{},
-		mux:         &sync.Mutex{},
-		mux1:        &sync.Mutex{},
-		domain:      "http://en.wikipedia.org",
-		InChan:      make(chan *CrawlerPacket),
-		OutChan:     make(chan *CrawlerPacket),
-		leader:      leader,
-		bloomFilter: bloom.New(10e9, 8), //bloomfilter.New(3, 10e10),
-		hasher:      fnv.New64(),
-		past:        map[string]bool{},
+		crawlQueue: []string{},
+		mux:        &sync.Mutex{},
+		mux1:       &sync.Mutex{},
+		domain:     "http://en.wikipedia.org",
+		InChan:     make(chan *CrawlerPacket),
+		OutChan:    make(chan *CrawlerPacket),
+		leader:     leader,
+		hasher:     fnv.New64(),
+		past:       map[string]bool{},
 	}
 }
 
 func (wc *Crawler) Start() {
-
-	/*s := "/wiki/War_crimes"
-	s1 := "/wiki/War_crimes2"
-
-	fmt.Println(wc.bloomFilter.Test([]byte(s)))
-	wc.bloomFilter.Add([]byte(s1))
-	for i := 0; i < 10e6; i++ {
-		wc.bloomFilter.Add([]byte(strconv.Itoa(i)))
-	}
-	fmt.Println(wc.bloomFilter.Test([]byte(s)))
-	fmt.Println(wc.bloomFilter.Test([]byte(s1)))
-
-	log.Fatal()*/
 
 	fmt.Println("Starting crawl...")
 	go wc.crawl()
@@ -87,8 +71,7 @@ func (wc *Crawler) crawl() {
 	go func() {
 		for {
 			select {
-			case <-time.After(time.Millisecond * 15000):
-				start := time.Now()
+			case <-time.After(time.Millisecond * 1000):
 				if len(wc.crawlQueue) == 0 {
 					continue
 				}
@@ -110,7 +93,6 @@ func (wc *Crawler) crawl() {
 
 				// Lookup the page hash in the DHT in order to prevent parsing of a page which has already been crawled by another node
 				// This could be the case since the same page could be pointed to by several URLs.
-				start1 := time.Now()
 				resChan := make(chan bool)
 				wc.OutChan <- &CrawlerPacket{
 					PageHash: &PageHashPackage{
@@ -121,13 +103,6 @@ func (wc *Crawler) crawl() {
 				}
 				// wait for response
 				found := <-resChan
-				elapsed1 := time.Since(start1)
-				fmt.Printf("Time for lookup: %s\n", elapsed1)
-				// Set bloom filter to visisted.
-				//wc.bloomFilter.Add([]byte(nextPage))
-				/*wc.mux1.Lock()
-				wc.past[nextPage] = true
-				wc.mux1.Unlock()*/
 				if found {
 					fmt.Printf("Page has already been crawled, skipping.\n")
 					continue
@@ -154,9 +129,6 @@ func (wc *Crawler) crawl() {
 				// Filter out urls that already has been crawler by this crawler
 				filteredHyperLinks := make([]string, 0, len(page.Hyperlinks))
 				for _, hyperlink := range page.Hyperlinks {
-					/*if !wc.bloomFilter.Test([]byte(hyperlink)) {
-						filteredHyperLinks = append(filteredHyperLinks, hyperlink)
-					}*/
 					if !wc.Crawled(hyperlink) {
 						filteredHyperLinks = append(filteredHyperLinks, hyperlink)
 						wc.mux1.Lock()
@@ -187,8 +159,6 @@ func (wc *Crawler) crawl() {
 						Url:                nextPage,
 					},
 				}
-				elapsed := time.Since(start)
-				log.Printf("Crawl took %s", elapsed)
 			}
 		}
 	}()
@@ -348,16 +318,6 @@ func (wc *Crawler) keywordFrequency(keywords []string) map[string]int {
 	}
 	return frequencies
 }
-
-// creates a 20 byte long hash
-/*func (wc *Crawler) fastHash(id string) dht.TypeID {
-	wc.hasher.Reset()
-	wc.hasher.Write([]byte(id))
-	hash := wc.hasher.Sum64()
-	var b [dht.IDByteSize]byte
-	binary.LittleEndian.PutUint64(b[:], hash)
-	return b
-}*/
 
 // Removes first element from crawler queue
 func (wc *Crawler) popQueue() string {

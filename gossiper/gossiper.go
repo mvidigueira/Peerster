@@ -65,14 +65,14 @@ type Gossiper struct {
 	webCrawler   *webcrawler.Crawler
 	rankerCache  *rankerCache
 
-	diffieHellmanMap         map[string](chan *dto.DiffieHellman)
-	activeDiffieHellmans     map[string][]*DiffieHellmanSession
-	encryptWebCrawlerTraffic bool
-	privateKey               *ecdsa.PrivateKey
+	diffieHellmanMap     map[string](chan *dto.DiffieHellman)
+	activeDiffieHellmans map[string][]*DiffieHellmanSession
+	encryptDHTOperations bool
+	privateKey           *ecdsa.PrivateKey
 }
 
 //NewGossiper creates a new gossiper
-func NewGossiper(address, name string, UIport string, peers []string, simple bool, rtimeout int, dhtBootstrap string, crawlLeader, encryptStoreOperations bool) *Gossiper {
+func NewGossiper(address, name string, UIport string, peers []string, simple bool, rtimeout int, dhtBootstrap string, crawlLeader, encryptDHTOperations bool) *Gossiper {
 	gossipAddr, err := net.ResolveUDPAddr("udp4", address)
 	dto.LogError(err)
 	clientAddr, err := net.ResolveUDPAddr("udp4", "localhost:"+UIport)
@@ -124,10 +124,10 @@ func NewGossiper(address, name string, UIport string, peers []string, simple boo
 		webCrawler:  webcrawler.New(crawlLeader),
 		rankerCache: newRankerCache(),
 
-		diffieHellmanMap:         map[string](chan *dto.DiffieHellman){},
-		activeDiffieHellmans:     map[string]([]*DiffieHellmanSession){},
-		encryptWebCrawlerTraffic: encryptStoreOperations,
-		privateKey:               privateKey,
+		diffieHellmanMap:     map[string](chan *dto.DiffieHellman){},
+		activeDiffieHellmans: map[string]([]*DiffieHellmanSession){},
+		encryptDHTOperations: encryptDHTOperations,
+		privateKey:           privateKey,
 	}
 
 	g.bucketTable = newBucketTable(g.dhtMyID, g)

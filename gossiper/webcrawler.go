@@ -6,7 +6,7 @@ import (
 	"protobuf"
 	"time"
 
-	"github.com/mvidigueira/Diffie-Hellman/aesencryptor"
+	"github.com/mvidigueira/Peerster/Diffie-Hellman/aesencryptor"
 	"github.com/mvidigueira/Peerster/dht_util"
 
 	"github.com/mvidigueira/Peerster/dht"
@@ -90,7 +90,7 @@ func (g *Gossiper) batchSendURLS(owner *dht.NodeState, hyperlinks []string) {
 			tmp[k] = b.(string)
 		}
 		var gossiperPacket *dto.GossipPacket
-		if g.encryptWebCrawlerTraffic {
+		if g.encryptDHTOperations {
 			ch := g.getKey(owner.Address)
 			key := <-ch
 			if len(key) == 0 {
@@ -111,18 +111,6 @@ func (g *Gossiper) batchSendURLS(owner *dht.NodeState, hyperlinks []string) {
 					Packet: cipherText,
 				},
 			}
-			/*aesEncrypter := aesencryptor.New(key)
-			fmt.Println(len(tmp))
-			joined := strings.Join(tmp, " ")
-			fmt.Println("SENDING JOINED")
-			fmt.Println(len(joined))
-			cipherText := aesEncrypter.Encrypt([]byte(joined))
-			gossiperPacket = &dto.GossipPacket{
-				HyperlinkMessage: &webcrawler.HyperlinkPackage{
-					Encrypted:      true,
-					EncryptedLinks: cipherText,
-				},
-			}*/
 		} else {
 			gossiperPacket = &dto.GossipPacket{
 				HyperlinkMessage: &webcrawler.HyperlinkPackage{
@@ -153,7 +141,7 @@ func (g *Gossiper) batchSendKeywords(owner *dht.NodeState, items []*webcrawler.K
 			break
 		}
 
-		if g.encryptWebCrawlerTraffic {
+		if g.encryptDHTOperations {
 			err = g.sendEncryptedStore(owner, [dht_util.IDByteSize]byte{}, packetBytes, dht.KeywordsBucket)
 		} else {
 			err = g.sendStore(owner, [dht_util.IDByteSize]byte{}, packetBytes, dht.KeywordsBucket)
@@ -179,7 +167,7 @@ func (g *Gossiper) batchSendCitations(owner *dht.NodeState, items []*webcrawler.
 		if err != nil {
 			panic(err)
 		}
-		if g.encryptWebCrawlerTraffic {
+		if g.encryptDHTOperations {
 			err = g.sendEncryptedStore(owner, [dht_util.IDByteSize]byte{}, packetBytes, dht.CitationsBucket)
 		} else {
 			err = g.sendStore(owner, [dht_util.IDByteSize]byte{}, packetBytes, dht.CitationsBucket)
@@ -250,8 +238,7 @@ func (g *Gossiper) saveOutboundLinksInDHT(outboundLinks *webcrawler.OutBoundLink
 		s[i] = outBoundLink
 	}
 	batches := g.createUDPBatches(closest, s)
-	fmt.Printf("SIZE OG BATCH %d\n", len(batches))
-	/*for _, batch := range batches {
+	for _, batch := range batches {
 		tmp := make([]*webcrawler.OutBoundLinksPackage, len(batch.([]interface{})))
 		for k, b := range batch.([]interface{}) {
 			tmp[k] = b.(*webcrawler.OutBoundLinksPackage)
@@ -260,7 +247,7 @@ func (g *Gossiper) saveOutboundLinksInDHT(outboundLinks *webcrawler.OutBoundLink
 		if err != nil {
 			panic(err)
 		}
-		if g.encryptWebCrawlerTraffic {
+		if g.encryptDHTOperations {
 			err = g.sendEncryptedStore(closest, id, packetBytes, dht.LinksBucket)
 		} else {
 			err = g.sendStore(closest, id, packetBytes, dht.LinksBucket)
@@ -268,25 +255,16 @@ func (g *Gossiper) saveOutboundLinksInDHT(outboundLinks *webcrawler.OutBoundLink
 		if err != nil {
 			fmt.Printf("Failed to store key.\n")
 		}
-	}*/
+	}
 }
 
 func (g *Gossiper) saveCitationsInDHT(citationsPackage *webcrawler.CitationsPackage) {
 	destinations := make(map[dht.NodeState][]*webcrawler.Citations)
 	fmt.Printf("Size of citation: %d\n.", len(citationsPackage.CitationsList))
-	//citation := citationsPackage.CitationsList[0]
-	//id := dht_util.GenerateKeyHash(citation.Url)
-	//kClosest := g.LookupNodes(id)
-
-	for i, citation := range citationsPackage.CitationsList {
+	for _, citation := range citationsPackage.CitationsList {
 		citation := citation //create a copy of the variable
 		id := dht_util.GenerateKeyHash(citation.Url)
-		lookupTime := time.Now()
 		kClosest := g.LookupNodes(id)
-		elapsed := time.Since(lookupTime)
-		if i%20 == 0 {
-			fmt.Printf("LOOKUP TIME: %s\n", elapsed)
-		}
 		if len(kClosest) == 0 {
 			fmt.Printf("Could not perform store since no neighbours found.\n")
 			break
@@ -304,7 +282,7 @@ func (g *Gossiper) saveCitationsInDHT(citationsPackage *webcrawler.CitationsPack
 				fmt.Println(err)
 				return
 			}
-			msg := g.newDHTStore(dest.NodeID, packetBytes, dht.CitationsBucket)
+			msg := g.newDHTStore(dest.NodeID, packetBytes, dht.CitationsBucket, false)
 			g.replyStore(msg)
 			continue
 		}
@@ -340,7 +318,7 @@ func (g *Gossiper) saveKeywordsInDHT(indexPackage *webcrawler.IndexPackage) {
 				fmt.Println(err)
 				return
 			}
-			msg := g.newDHTStore(dest.NodeID, packetBytes, dht.KeywordsBucket)
+			msg := g.newDHTStore(dest.NodeID, packetBytes, dht.KeywordsBucket, false)
 			g.replyStore(msg)
 			continue
 		}
@@ -401,21 +379,6 @@ func (g *Gossiper) decryptHyperlinkPackage(sender string, encryptedPacket *webcr
 	go func() {
 		ch := g.getKey(sender)
 		key := <-ch
-		/*diffieSession, f := g.activeDiffieHellmans[sender]
-		if !f {
-			_, neg := g.diffieHellmanMap[sender]
-			if !neg {
-				ch := g.getKey(sender)
-				select {
-				case k := <-ch:
-					diffieSession = NewDiffieHellmanSession(k)
-				}
-			} else {
-				time.Sleep(time.Second * 5)
-				g.decryptHyperlinkPackage(sender, encryptedPacket)
-				return
-			}
-		}*/
 		aesEncrypter := aesencryptor.New(key)
 		cipher, err := aesEncrypter.Decrypt(encryptedPacket.Packet)
 		if err != nil {

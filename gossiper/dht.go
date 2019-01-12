@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mvidigueira/Diffie-Hellman/aesencryptor"
+	"github.com/mvidigueira/Peerster/Diffie-Hellman/aesencryptor"
 	"github.com/mvidigueira/Peerster/dht_util"
 	"github.com/mvidigueira/Peerster/webcrawler"
 	"github.com/reiver/go-porterstemmer"
@@ -19,14 +19,9 @@ import (
 	"github.com/mvidigueira/Peerster/dto"
 )
 
-func (g *Gossiper) newDHTStore(key dht_util.TypeID, data []byte, storeType string) *dht.Message {
-	store := &dht.Store{Key: key, Data: data, Type: storeType}
+func (g *Gossiper) newDHTStore(key dht_util.TypeID, data []byte, storeType string, encrypted bool) *dht.Message {
+	store := &dht.Store{Key: key, Data: data, Type: storeType, Encrypted: encrypted}
 	return &dht.Message{Nonce: rand.Uint64(), SenderID: g.dhtMyID, Store: store}
-}
-
-func (g *Gossiper) newDHTEncryptedStore(key dht_util.TypeID, data []byte, storeType string) *dht.Message {
-	store := &dht.EncryptedStore{Key: key, Data: data, Type: storeType}
-	return &dht.Message{Nonce: rand.Uint64(), SenderID: g.dhtMyID, EncryptedStore: store}
 }
 
 func (g *Gossiper) newDHTPing() *dht.Message {
@@ -47,13 +42,13 @@ func (g *Gossiper) newDHTNodeReply(nodeStates []*dht.NodeState, nonce uint64) *d
 	return &dht.Message{Nonce: nonce, SenderID: g.dhtMyID, NodeReply: reply}
 }
 
-func (g *Gossiper) newDHTValueLookup(key dht_util.TypeID, dbBucket string) *dht.Message {
-	lookup := &dht.ValueLookup{Key: key, DbBucket: dbBucket}
+func (g *Gossiper) newDHTValueLookup(key dht_util.TypeID, dbBucket string, encrypt bool) *dht.Message {
+	lookup := &dht.ValueLookup{Key: key, DbBucket: dbBucket, Encrypted: encrypt}
 	return &dht.Message{Nonce: rand.Uint64(), SenderID: g.dhtMyID, ValueLookup: lookup}
 }
 
-func (g *Gossiper) newDHTValueReplyData(data []byte, nonce uint64) *dht.Message {
-	reply := &dht.ValueReply{Data: &data}
+func (g *Gossiper) newDHTValueReplyData(data []byte, nonce uint64, encrypt bool) *dht.Message {
+	reply := &dht.ValueReply{Data: &data, Encrypted: encrypt}
 	return &dht.Message{Nonce: nonce, SenderID: g.dhtMyID, ValueReply: reply}
 }
 
@@ -98,7 +93,7 @@ func (g *Gossiper) replyPing(senderAddr string, ping *dht.Message) {
 
 // sendStore - sends a RPC to node 'ns' for storing the KV pair ('key' - 'data')
 func (g *Gossiper) sendStore(ns *dht.NodeState, key dht_util.TypeID, data []byte, storeType string) (err error) {
-	msg := g.newDHTStore(key, data, storeType)
+	msg := g.newDHTStore(key, data, storeType, false)
 	packet := &dto.GossipPacket{DHTMessage: msg}
 
 	g.sendUDP(packet, ns.Address)
@@ -112,10 +107,9 @@ func (g *Gossiper) sendEncryptedStore(ns *dht.NodeState, key dht_util.TypeID, da
 	k := <-ch
 	aesEncrypter := aesencryptor.New(k)
 	cipherText := aesEncrypter.Encrypt(data)
-	msg := g.newDHTEncryptedStore([dht_util.IDByteSize]byte{}, cipherText, dht.KeywordsBucket)
+	msg := g.newDHTStore(key, cipherText, storeType, true)
 	packet := &dto.GossipPacket{DHTMessage: msg}
 	g.sendUDP(packet, ns.Address)
-
 	return nil
 }
 
@@ -276,8 +270,15 @@ func (g *Gossiper) replyLookupNode(senderAddr string, lookup *dht.Message) {
 }
 
 // LookupKey - sends a RPC to node 'ns' for lookup of key 'key'
-func (g *Gossiper) sendLookupKey(ns *dht.NodeState, key dht_util.TypeID, dbBucket string) chan *dht.Message {
-	msg := g.newDHTValueLookup(key, dbBucket)
+func (g *Gossiper) sendLookupKey(ns *dht.NodeState, key dht_util.TypeID, dbBucket string, encrypt bool) chan *dht.Message {
+	msg := g.newDHTValueLookup(key, dbBucket, encrypt)
+	if g.encryptDHTOperations {
+		ch := g.getKey(ns.Address)
+		k := <-ch
+		aesEncrypter := aesencryptor.New(k)
+		cipherText := aesEncrypter.Encrypt(msg.ValueLookup.Key[:])
+		msg.ValueLookup.EncryptedKey = cipherText
+	}
 	rpcNum := msg.Nonce
 	packet := &dto.GossipPacket{DHTMessage: msg}
 	c, isNew := g.dhtChanMap.AddListener(rpcNum)
@@ -292,9 +293,34 @@ func (g *Gossiper) sendLookupKey(ns *dht.NodeState, key dht_util.TypeID, dbBucke
 
 // ReplyLookupKey - replies to dht message 'lookupKey', from node with address 'senderAddr'
 func (g *Gossiper) replyLookupKey(senderAddr string, lookupKey *dht.Message) {
+	var key [dht_util.IDByteSize]byte
+	if lookupKey.ValueLookup.Encrypted {
+		diffieSessions, f := g.activeDiffieHellmans[senderAddr]
+		if !f {
+			fmt.Println("No key found, descarding lookup...")
+			return
+		}
+		encrypted := false
+		for i := 0; i < len(diffieSessions); i++ {
+			session := diffieSessions[len(diffieSessions)-1]
+			aesEncrypter := aesencryptor.New(session.Key)
+			data, err := aesEncrypter.Decrypt(lookupKey.ValueLookup.EncryptedKey[:])
+			if err == nil {
+				encrypted = true
+				session.LastTimeUsed = time.Now()
+				copy(key[:], data)
+				break
+			}
+		}
+		if !encrypted {
+			fmt.Println("failed to decrypt lookup message, disgarding..")
+		}
+	} else {
+		key = lookupKey.ValueLookup.Key
+	}
 	var msg *dht.Message
-	if data, ok := g.dhtDb.Retrieve(lookupKey.ValueLookup.Key, lookupKey.ValueLookup.DbBucket); ok {
-		msg = g.newDHTValueReplyData(data, lookupKey.Nonce)
+	if data, ok := g.dhtDb.Retrieve(key, lookupKey.ValueLookup.DbBucket); ok {
+		msg = g.newDHTValueReplyData(data, lookupKey.Nonce, lookupKey.ValueLookup.Encrypted)
 	} else {
 		results := g.bucketTable.alphaClosest(lookupKey.ValueLookup.Key, bucketSize)
 		msg = g.newDHTValueReplyNodes(results, lookupKey.Nonce)
@@ -346,44 +372,44 @@ func (g *Gossiper) dhtMessageListenRoutine(cDHTMessage chan *dto.PacketAddressPa
 					//fmt.Printf("VALUE REPLY with data: %x from %x\n", *msg.ValueReply.Data, msg.SenderID)
 				} else {
 					fmt.Printf("VALUE REPLY with results %s from %x\n", dht.String(*msg.ValueReply.NodeStates), msg.SenderID)
+					if msg.ValueReply.Encrypted {
+						log.Fatal("EEEEEEERRRRRROOOO")
+					}
 				}
 				g.dhtChanMap.InformListener(msg.Nonce, msg)
 			}(msg)
 		case dht.StoreT:
-			go func(msg *dht.Message) {
-				fmt.Printf("STORE REQUEST from %x\n", msg.SenderID)
-				g.replyStore(msg)
-			}(msg)
-		case dht.EncryptedStoreT:
-			go func(msg *dht.Message) {
-				diffieSessions, f := g.activeDiffieHellmans[sender]
-				if !f {
-					fmt.Println("No key found, descarding...")
-					continue
-				}
+			if msg.Store.Encrypted {
+				go func(msg *dht.Message) {
+					diffieSessions, f := g.activeDiffieHellmans[sender]
+					if !f {
+						fmt.Println("No key found, descarding...")
+						return
+					}
 
-				encrypted := false
-				for i := 0; i < len(diffieSessions); i++ {
-					session := diffieSessions[len(diffieSessions)-1]
-					aesEncrypter := aesencryptor.New(session.Key)
-					data, err := aesEncrypter.Decrypt(msg.EncryptedStore.Data)
-					if err == nil {
-						encrypted = true
-						session.LastTimeUsed = time.Now()
+					encrypted := false
+					for i := 0; i < len(diffieSessions); i++ {
+						session := diffieSessions[len(diffieSessions)-1]
+						aesEncrypter := aesencryptor.New(session.Key)
+						data, err := aesEncrypter.Decrypt(msg.Store.Data)
+						if err == nil {
+							encrypted = true
+							session.LastTimeUsed = time.Now()
+							msg.Store.Data = data
+							g.replyStore(msg)
+							break
+						}
 					}
-					msg.Store = &dht.Store{
-						Data: data,
-						Type: msg.EncryptedStore.Type,
-						Key:  msg.EncryptedStore.Key,
+					if !encrypted {
+						fmt.Println("failed to decrypt message, disgarding..")
 					}
+				}(msg)
+			} else {
+				go func(msg *dht.Message) {
+					fmt.Printf("STORE REQUEST from %x\n", msg.SenderID)
 					g.replyStore(msg)
-					break
-				}
-				if !encrypted {
-					fmt.Println("failed to decrypt message, disgarding..")
-				}
-			}(msg)
-
+				}(msg)
+			}
 		}
 	}
 }

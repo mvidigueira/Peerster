@@ -39,7 +39,7 @@ func main() {
 	simple := flag.Bool("simple", false, "run gossiper in simple broadcast mode")
 	bootstrap := flag.String("boot", "", "peer of the form ip:port that is used to join the dht network")
 	crawlLeader := flag.Bool("crawlLeader", false, "initiator of the crawl")
-	encryptStoreOperations := flag.Bool("encryptStore", false, "enables encrypting of all store operations from the webcrawler.")
+	encryptDHTOperations := flag.Bool("encryptDHTOperations", false, "enables encrypting of all store operations from the webcrawler.")
 
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to file")
 
@@ -59,7 +59,7 @@ func main() {
 	if *peersStr != "" {
 		peers = strings.Split(*peersStr, ",")
 	}
-	g = gossiper.NewGossiper(*gossipAddr, *name, *UIPort, peers, *simple, *rtimeout, *bootstrap, *crawlLeader, *encryptStoreOperations)
+	g = gossiper.NewGossiper(*gossipAddr, *name, *UIPort, peers, *simple, *rtimeout, *bootstrap, *crawlLeader, *encryptDHTOperations)
 
 	go g.Start()
 

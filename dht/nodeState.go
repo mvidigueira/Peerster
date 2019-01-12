@@ -21,23 +21,21 @@ type NodeState struct {
 }
 
 type Message struct {
-	Nonce          uint64
-	SenderID       TypeID
-	Store          *Store
-	EncryptedStore *EncryptedStore
-	Ping           *Ping
-	PingReply      *PingReply
-	NodeLookup     *NodeLookup
-	NodeReply      *NodeReply
-	ValueLookup    *ValueLookup
-	ValueReply     *ValueReply
+	Nonce       uint64
+	SenderID    TypeID
+	Store       *Store
+	Ping        *Ping
+	PingReply   *PingReply
+	NodeLookup  *NodeLookup
+	NodeReply   *NodeReply
+	ValueLookup *ValueLookup
+	ValueReply  *ValueReply
 }
 
 type MessageType int
 
 const (
-	StoreT          MessageType = iota
-	EncryptedStoreT MessageType = iota
+	StoreT MessageType = iota
 	PingT
 	PingReplyT
 	NodeLookupT
@@ -49,8 +47,6 @@ const (
 func (msg *Message) GetUnderlyingType() MessageType {
 	if msg.Store != nil {
 		return StoreT
-	} else if msg.EncryptedStore != nil {
-		return EncryptedStoreT
 	} else if msg.Ping != nil {
 		return PingT
 	} else if msg.PingReply != nil {
@@ -69,15 +65,10 @@ func (msg *Message) GetUnderlyingType() MessageType {
 }
 
 type Store struct {
-	Key  TypeID
-	Type string // PUT
-	Data []byte
-}
-
-type EncryptedStore struct {
-	Key  TypeID
-	Type string // PUT
-	Data []byte
+	Key       TypeID
+	Type      string // PUT
+	Data      []byte
+	Encrypted bool
 }
 
 type Ping struct{}
@@ -93,12 +84,15 @@ type NodeReply struct {
 }
 
 type ValueLookup struct {
-	Key      TypeID
-	DbKey    string
-	DbBucket string
+	Key          TypeID
+	DbKey        string
+	DbBucket     string
+	Encrypted    bool
+	EncryptedKey []byte
 }
 
 type ValueReply struct {
 	NodeStates *[]*NodeState
 	Data       *[]byte
+	Encrypted  bool
 }

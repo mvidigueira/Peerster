@@ -215,7 +215,7 @@ func (g *Gossiper) lookupRoundValue(snsa *dht.SafeNodeStateArray, dbBucket strin
 }
 
 func (g *Gossiper) lookupSingleValue(ns *dht.NodeState, snsa *dht.SafeNodeStateArray, msg chan *dht.Message, dbBucket string) {
-	ch := g.sendLookupKey(ns, snsa.Target, dbBucket)
+	ch := g.sendLookupKey(ns, snsa.Target, dbBucket, g.encryptDHTOperations)
 	v := <-ch
 	snsa.SetResponded(ns)
 	msg <- v

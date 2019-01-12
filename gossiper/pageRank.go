@@ -124,7 +124,7 @@ func (g *Gossiper) batchRankUpdates(urlInfo *webcrawler.OutBoundLinksPackage, pa
 				fmt.Println(err)
 				return
 			}
-			msg := g.newDHTStore(dest.NodeID, packetBytes, dht.CitationsBucket)
+			msg := g.newDHTStore(dest.NodeID, packetBytes, dht.CitationsBucket, false)
 			g.replyStore(msg)
 			continue
 		}

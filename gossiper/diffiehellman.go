@@ -12,7 +12,7 @@ import (
 	"protobuf"
 	"time"
 
-	"github.com/mvidigueira/Diffie-Hellman/diffiehellman"
+	"github.com/mvidigueira/Peerster/Diffie-Hellman/diffiehellman"
 	"github.com/mvidigueira/Peerster/dht_util"
 	"github.com/mvidigueira/Peerster/dto"
 )
@@ -134,17 +134,13 @@ func (g *Gossiper) negotiateDiffieHellmanInitiator(dest string) chan ([]byte) {
 			return
 		}
 
-		fmt.Printf("KEY LENGTH: %d\n", len(reply.DiffiePublicKey))
-
 		symmetricKey := diffieHellman.GenerateSymmetricKey(reply.DiffiePublicKey)
 
 		g.activeDiffieHellmans[dest] = append(g.activeDiffieHellmans[dest], NewDiffieHellmanSession(symmetricKey))
 
 		delete(g.diffieHellmanMap, dest)
 
-		fmt.Println(symmetricKey)
-
-		fmt.Printf("1Key setup with %s\n", dest)
+		fmt.Printf("Key setup with %s\n", dest)
 
 		callBackChannel <- symmetricKey
 	}()
@@ -163,8 +159,6 @@ func (g *Gossiper) negotiateDiffieHellman(ch chan *dto.DiffieHellman, dest strin
 	diffieHellman := diffiehellman.New(group, p)
 
 	// generate symmetric key
-	fmt.Printf("KEY LENGTH: %d\n", len(packet.DiffiePublicKey))
-
 	symmetricKey := diffieHellman.GenerateSymmetricKey(packet.DiffiePublicKey)
 
 	// Generarate one time public key used during diffie hellman
@@ -212,7 +206,7 @@ func (g *Gossiper) negotiateDiffieHellman(ch chan *dto.DiffieHellman, dest strin
 	delete(g.diffieHellmanMap, dest)
 
 	fmt.Println(symmetricKey)
-	fmt.Printf("1Key setup with %s\n", dest)
+	fmt.Printf("Key setup with %s\n", dest)
 }
 
 func (g *Gossiper) signPacket(packet *dto.DiffieHellman) ([]byte, []byte, error) {
