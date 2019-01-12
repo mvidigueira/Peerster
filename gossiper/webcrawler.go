@@ -2,9 +2,10 @@ package gossiper
 
 import (
 	"fmt"
-	"github.com/mvidigueira/Peerster/dht_util"
 	"protobuf"
 	"time"
+
+	"github.com/mvidigueira/Peerster/dht_util"
 
 	"github.com/mvidigueira/Peerster/dht"
 	"github.com/mvidigueira/Peerster/dto"
@@ -16,18 +17,39 @@ func (g *Gossiper) webCrawlerListenerRoutine() {
 	for packet := range g.webCrawler.OutChan {
 		switch {
 		case packet.OutBoundLinks != nil:
-			g.saveOutboundLinksInDHT(packet.OutBoundLinks)
+			go func(outboundLinks *webcrawler.OutBoundLinksPackage) {
+				start := time.Now()
+				g.saveOutboundLinksInDHT(outboundLinks)
+				elapsed := time.Since(start)
+				fmt.Printf("Outboundlink time: %s\n", elapsed)
+			}(packet.OutBoundLinks)
 		case packet.CitationsPackage != nil:
-			g.saveCitationsInDHT(packet.CitationsPackage)
+			go func(citation *webcrawler.CitationsPackage) {
+				start := time.Now()
+				g.saveCitationsInDHT(citation)
+				elapsed := time.Since(start)
+				fmt.Printf("Citation time: %s\n", elapsed)
+			}(packet.CitationsPackage)
 		case packet.HyperlinkPackage != nil:
-			g.distributeHyperlinks(packet.HyperlinkPackage)
+			go func(hyperlinks *webcrawler.HyperlinkPackage) {
+				g.distributeHyperlinks(hyperlinks)
+			}(packet.HyperlinkPackage)
 		case packet.IndexPackage != nil:
-			g.saveKeywordsInDHT(packet.IndexPackage)
+			go func(indexPackage *webcrawler.IndexPackage) {
+				g.saveKeywordsInDHT(indexPackage)
+			}(packet.IndexPackage)
 		case packet.PageHash != nil && packet.PageHash.Type == "store":
-			g.savePageHashInDHT(packet.PageHash)
+			go func(pageHash *webcrawler.PageHashPackage) {
+				g.savePageHashInDHT(pageHash)
+			}(packet.PageHash)
 		case packet.PageHash != nil && packet.PageHash.Type == "lookup":
-			_, found := g.LookupValue(packet.PageHash.Hash, dht.PageHashBucket)
-			packet.ResChan <- found
+			go func(pageHash *webcrawler.PageHashPackage) {
+				start := time.Now()
+				_, found := g.LookupValue(pageHash.Hash, dht.PageHashBucket)
+				packet.ResChan <- found
+				elapsed := time.Since(start)
+				fmt.Printf("Page hash lookup time: %s\n", elapsed)
+			}(packet.PageHash)
 		}
 	}
 }
@@ -183,13 +205,14 @@ func (g *Gossiper) saveOutboundLinksInDHT(outboundLinks *webcrawler.OutBoundLink
 	s := make([]interface{}, len(outboundLinks.OutBoundLinks))
 	for i, v := range outboundLinks.OutBoundLinks {
 		outBoundLink := &webcrawler.OutBoundLinksPackage{
-			Url: outboundLinks.Url,
+			Url:           outboundLinks.Url,
 			OutBoundLinks: []string{v},
 		}
 		s[i] = outBoundLink
 	}
 	batches := g.createUDPBatches(closest, s)
-	for _, batch := range batches {
+	fmt.Printf("SIZE OG BATCH %d\n", len(batches))
+	/*for _, batch := range batches {
 		tmp := make([]*webcrawler.OutBoundLinksPackage, len(batch.([]interface{})))
 		for k, b := range batch.([]interface{}) {
 			tmp[k] = b.(*webcrawler.OutBoundLinksPackage)
@@ -202,15 +225,25 @@ func (g *Gossiper) saveOutboundLinksInDHT(outboundLinks *webcrawler.OutBoundLink
 		if err != nil {
 			fmt.Printf("Failed to store key.\n")
 		}
-	}
+	}*/
 }
 
-func (g *Gossiper) saveCitationsInDHT(citationsPackage *webcrawler.CitationsPackage){
+func (g *Gossiper) saveCitationsInDHT(citationsPackage *webcrawler.CitationsPackage) {
 	destinations := make(map[dht.NodeState][]*webcrawler.Citations)
-	for _, citation := range citationsPackage.CitationsList {
+	fmt.Printf("Size of citation: %d\n.", len(citationsPackage.CitationsList))
+	//citation := citationsPackage.CitationsList[0]
+	//id := dht_util.GenerateKeyHash(citation.Url)
+	//kClosest := g.LookupNodes(id)
+
+	for i, citation := range citationsPackage.CitationsList {
 		citation := citation //create a copy of the variable
 		id := dht_util.GenerateKeyHash(citation.Url)
+		lookupTime := time.Now()
 		kClosest := g.LookupNodes(id)
+		elapsed := time.Since(lookupTime)
+		if i%20 == 0 {
+			fmt.Printf("LOOKUP TIME: %s\n", elapsed)
+		}
 		if len(kClosest) == 0 {
 			fmt.Printf("Could not perform store since no neighbours found.\n")
 			break

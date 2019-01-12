@@ -2,13 +2,14 @@ package gossiper
 
 import (
 	"fmt"
-	"github.com/mvidigueira/Peerster/dht_util"
 	"log"
 	"math/rand"
 	"net"
 	"protobuf"
 	"strconv"
 	"time"
+
+	"github.com/mvidigueira/Peerster/dht_util"
 
 	"github.com/mvidigueira/Peerster/dht"
 	"github.com/mvidigueira/Peerster/dto"
@@ -286,7 +287,10 @@ func (g *Gossiper) receiveClientUDP(cRumoring, cPMing chan *dto.PacketAddressPai
 //receiveExternalUDP - receives gossip packets from PEERS and forwards them to the appropriate channel
 //among those provided, depending on whether they are rumor, simple or status packets
 func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, cDataReply, cSearcRequest, cSearchReply, cFileNaming, cBlocks, cDHT chan *dto.PacketAddressPair) {
+	i := 0
 	for {
+		i++
+
 		packet := &dto.GossipPacket{}
 		packetBytes := make([]byte, packetSize)
 		n, udpAddr, err := g.conn.ReadFromUDP(packetBytes)
@@ -300,7 +304,11 @@ func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, c
 		protobuf.Decode(packetBytes, packet)
 		senderAddress := udpAddr.IP.String() + ":" + strconv.Itoa(udpAddr.Port)
 		pap := &dto.PacketAddressPair{Packet: packet, SenderAddress: senderAddress}
+		if i%1000 == 0 {
+			fmt.Println("+++++++++++++++++++++++++")
+			fmt.Println(packet.DHTMessage)
 
+		}
 		switch packet.GetUnderlyingType() {
 		case "status":
 			if g.UseSimple {

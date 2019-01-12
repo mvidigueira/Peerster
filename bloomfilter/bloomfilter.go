@@ -28,6 +28,7 @@ func New(k, m uint64) *BloomFilter {
 		n:             0,
 		m:             m,
 		hashFunctions: []hash.Hash64{fnv.New64(), fnv.New64a(), murmur3.New64()},
+		//hashFunctions: []hash.Hash64{fnv.New64(), fnv.New64a(), murmur3.New64()},
 	}
 }
 
@@ -36,6 +37,13 @@ func (bf *BloomFilter) Set(elem []byte) {
 		return
 	}
 	for _, hf := range bf.hashFunctions {
+		hf.Reset()
+		bitsetIndex, bitIndex := bf.position(elem, hf)
+		bf.bitset[bitsetIndex] |= (uint64(1) << bitIndex)
+	}
+	for _, hf := range bf.hashFunctions {
+		hf.Reset()
+		hf.Write([]byte{1})
 		bitsetIndex, bitIndex := bf.position(elem, hf)
 		bf.bitset[bitsetIndex] |= (uint64(1) << bitIndex)
 	}
@@ -45,6 +53,15 @@ func (bf *BloomFilter) Set(elem []byte) {
 // False postive probablity = (1 - e^(-k*m/n))^k
 func (bf *BloomFilter) IsSet(elem []byte) bool {
 	for _, hf := range bf.hashFunctions {
+		hf.Reset()
+		bitsetIndex, bitIndex := bf.position(elem, hf)
+		if (bf.bitset[bitsetIndex] & (uint64(1) << bitIndex)) == 0 {
+			return false
+		}
+	}
+	for _, hf := range bf.hashFunctions {
+		hf.Reset()
+		hf.Write([]byte{1})
 		bitsetIndex, bitIndex := bf.position(elem, hf)
 		if (bf.bitset[bitsetIndex] & (uint64(1) << bitIndex)) == 0 {
 			return false
@@ -72,7 +89,6 @@ func (bf *BloomFilter) mInBits() int {
 }
 
 func (bf *BloomFilter) position(elem []byte, hf hash.Hash64) (uint64, uint64) {
-	hf.Reset()
 	hf.Write(elem)
 	hashSum := hf.Sum64()
 	mask := bf.mask(bf.mInBits())

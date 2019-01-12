@@ -2,16 +2,17 @@ package gossiper
 
 import (
 	"fmt"
-	"github.com/mvidigueira/Peerster/dht_util"
-	"github.com/mvidigueira/Peerster/webcrawler"
-	"github.com/reiver/go-porterstemmer"
-	"go.etcd.io/bbolt"
 	"log"
 	"math/rand"
 	"protobuf"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/mvidigueira/Peerster/dht_util"
+	"github.com/mvidigueira/Peerster/webcrawler"
+	"github.com/reiver/go-porterstemmer"
+	"go.etcd.io/bbolt"
 
 	"github.com/mvidigueira/Peerster/dht"
 	"github.com/mvidigueira/Peerster/dto"
@@ -139,37 +140,38 @@ func (g *Gossiper) replyStore(msg *dht.Message) {
 		}()
 
 	case dht.LinksBucket:
-		batchTemp := &BatchMessage{}
-		err := protobuf.Decode(msg.Store.Data, batchTemp)
-		if err != nil {
-			panic(err)
-		}
-		var links []string
-		for _, item := range batchTemp.OutBoundLinksPackages {
-			stores++
-			links = append(links, item.OutBoundLinks...)
-		}
-		url := batchTemp.OutBoundLinksPackages[0].Url
+		go func() {
+			batchTemp := &BatchMessage{}
+			err := protobuf.Decode(msg.Store.Data, batchTemp)
+			if err != nil {
+				panic(err)
+			}
+			var links []string
+			for _, item := range batchTemp.OutBoundLinksPackages {
+				stores++
+				links = append(links, item.OutBoundLinks...)
+			}
+			url := batchTemp.OutBoundLinksPackages[0].Url
 
-		idArray := dht_util.GenerateKeyHash(url)
-		id := idArray[:]
+			idArray := dht_util.GenerateKeyHash(url)
+			id := idArray[:]
 
-		outboundPackage := &webcrawler.OutBoundLinksPackage{batchTemp.OutBoundLinksPackages[0].Url, links}
-		data, err := protobuf.Encode(outboundPackage)
-		g.dhtDb.Db.Batch(func(tx *bbolt.Tx) error {
-			b := tx.Bucket([]byte(dht.LinksBucket))
-			err = b.Put(id, data)
-			return err
-		})
-		if err != nil {
-			log.Fatal(err)
-		}
+			outboundPackage := &webcrawler.OutBoundLinksPackage{batchTemp.OutBoundLinksPackages[0].Url, links}
+			data, err := protobuf.Encode(outboundPackage)
+			g.dhtDb.Db.Batch(func(tx *bbolt.Tx) error {
+				b := tx.Bucket([]byte(dht.LinksBucket))
+				err = b.Put(id, data)
+				return err
+			})
+			if err != nil {
+				log.Fatal(err)
+			}
 
-		numberOfLinks := len(links)
-		rankInfo := &RankInfo{Url: url, Rank: InitialRank, NumberOfOutboundLinks: numberOfLinks}
-		relerr := rankInfo.updatePageRank(g)
-		go g.setRank(*outboundPackage, *rankInfo, relerr)
-
+			numberOfLinks := len(links)
+			rankInfo := &RankInfo{Url: url, Rank: InitialRank, NumberOfOutboundLinks: numberOfLinks}
+			relerr := rankInfo.updatePageRank(g)
+			go g.setRank(*outboundPackage, *rankInfo, relerr)
+		}()
 	case dht.CitationsBucket:
 		go func() {
 			batchTemp := &BatchMessage{}
@@ -295,30 +297,44 @@ func (g *Gossiper) dhtMessageListenRoutine(cDHTMessage chan *dto.PacketAddressPa
 
 		switch msg.GetUnderlyingType() {
 		case dht.PingT:
-			fmt.Printf("PING from %x\n", msg.SenderID)
-			g.replyPing(sender, msg)
+			go func(msg *dht.Message) {
+				fmt.Printf("PING from %x\n", msg.SenderID)
+				g.replyPing(sender, msg)
+			}(msg)
 		case dht.NodeLookupT:
 			//fmt.Printf("NODE LOOKUP for node %x from %x\n", msg.NodeLookup.NodeID, msg.SenderID)
-			g.replyLookupNode(sender, msg)
+			go func(msg *dht.Message) {
+				g.replyLookupNode(sender, msg)
+			}(msg)
 		case dht.ValueLookupT:
-			fmt.Printf("VALUE LOOKUP for key %x from %x\n", msg.ValueLookup.Key, msg.SenderID)
-			g.replyLookupKey(sender, msg)
+			go func(msg *dht.Message) {
+				fmt.Printf("VALUE LOOKUP for key %x from %x\n", msg.ValueLookup.Key, msg.SenderID)
+				g.replyLookupKey(sender, msg)
+			}(msg)
 		case dht.PingReplyT:
-			fmt.Printf("PING REPLY from %x\n", msg.SenderID)
-			g.dhtChanMap.InformListener(msg.Nonce, msg)
+			go func(msg *dht.Message) {
+				fmt.Printf("PING REPLY from %x\n", msg.SenderID)
+				g.dhtChanMap.InformListener(msg.Nonce, msg)
+			}(msg)
 		case dht.NodeReplyT:
-			//fmt.Printf("NODE REPLY with results %s from %x\n", dht.String(msg.NodeReply.NodeStates), msg.SenderID)
-			g.dhtChanMap.InformListener(msg.Nonce, msg)
+			go func(msg *dht.Message) {
+				//fmt.Printf("NODE REPLY with results %s from %x\n", dht.String(msg.NodeReply.NodeStates), msg.SenderID)
+				g.dhtChanMap.InformListener(msg.Nonce, msg)
+			}(msg)
 		case dht.ValueReplyT:
-			if msg.ValueReply.Data != nil {
-				//fmt.Printf("VALUE REPLY with data: %x from %x\n", *msg.ValueReply.Data, msg.SenderID)
-			} else {
-				fmt.Printf("VALUE REPLY with results %s from %x\n", dht.String(*msg.ValueReply.NodeStates), msg.SenderID)
-			}
-			g.dhtChanMap.InformListener(msg.Nonce, msg)
+			go func(msg *dht.Message) {
+				if msg.ValueReply.Data != nil {
+					//fmt.Printf("VALUE REPLY with data: %x from %x\n", *msg.ValueReply.Data, msg.SenderID)
+				} else {
+					fmt.Printf("VALUE REPLY with results %s from %x\n", dht.String(*msg.ValueReply.NodeStates), msg.SenderID)
+				}
+				g.dhtChanMap.InformListener(msg.Nonce, msg)
+			}(msg)
 		case dht.StoreT:
-			//fmt.Printf("STORE REQUEST from %x\n", msg.SenderID)
-			g.replyStore(msg)
+			go func(msg *dht.Message) {
+				fmt.Printf("STORE REQUEST from %x\n", msg.SenderID)
+				g.replyStore(msg)
+			}(msg)
 		}
 	}
 }
@@ -432,7 +448,7 @@ func (g *Gossiper) DoSearch(query string) (rankedResults webcrawler.RankedResult
 
 	for _, rankedResult := range rankedResults.Results {
 		rankedResult.Result.SimScore = rankedResult.Result.SimScore / simScoreMax
-		pageRank := rankedResult.PageRank/pageRankMax
+		pageRank := rankedResult.PageRank / pageRankMax
 		rankedResult.Rank = (1-pageRankWeight)*rankedResult.Result.SimScore + pageRankWeight*rankedResult.PageRank*pageRank
 	}
 

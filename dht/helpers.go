@@ -3,8 +3,9 @@ package dht
 import (
 	"crypto/rand"
 	"fmt"
-	. "github.com/mvidigueira/Peerster/dht_util"
 	"math/bits"
+
+	. "github.com/mvidigueira/Peerster/dht_util"
 )
 
 func xorDistance(id1, id2 TypeID) (result TypeID) {
@@ -91,4 +92,3 @@ func CommonLeadingBits(id1, id2 TypeID) (inCommon int) {
 
 	return
 }
-
