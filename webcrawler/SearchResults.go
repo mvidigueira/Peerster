@@ -1,7 +1,9 @@
 package webcrawler
 
 import (
+	"log"
 	"math"
+	"runtime/debug"
 )
 
 type SearchResults struct {
@@ -23,6 +25,10 @@ func (r *SearchResult) CalculateSimScore() float64{
 	}
 	r.SimScore /= n+1
 	r.SimScore = math.Sqrt(r.SimScore)
+	if math.IsNaN(r.SimScore) {
+		log.Println("SimScore is NaN")
+		debug.PrintStack()
+	}
 	return r.SimScore
 }
 
@@ -59,8 +65,16 @@ func NewSearchResults(urlMap *KeywordToURLMap, numberOfDocs int) (results Search
 }
 
 func calculateTfIdfForNewResult(keywordOccurences int, numberOfResults int, numberOfDocs int) float64 {
+	if numberOfDocs <= numberOfResults {
+		numberOfDocs = numberOfResults+3
+	}
 	idf := math.Log(float64(numberOfDocs)/float64(1+numberOfResults))
-	return math.Log(float64(keywordOccurences))*idf
+	tfidf := math.Log(float64(1+keywordOccurences))*idf
+	if math.IsNaN(tfidf){
+		log.Println("TfIdf is NaN")
+		debug.PrintStack()
+	}
+	return tfidf
 }
 
 func (rs SearchResults) Len() int{

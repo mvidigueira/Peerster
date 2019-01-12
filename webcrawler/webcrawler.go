@@ -53,7 +53,7 @@ func (wc *Crawler) Start() {
 	if wc.leader {
 		wc.InChan <- &CrawlerPacket{
 			HyperlinkPackage: &HyperlinkPackage{
-				Links: []string{"/wiki/World_War_II"},
+				Links: []string{"/wiki/Sweden"},
 			},
 		}
 	}
@@ -79,6 +79,7 @@ func (wc *Crawler) crawl() {
 					wc.updateQueue([]string{nextPage})
 					continue
 				}
+
 
 				fmt.Printf("Crawled %s, found %d hyperlinks and %d keywords.\n", nextPage, len(page.Hyperlinks), len(page.KeywordFrequencies))
 
