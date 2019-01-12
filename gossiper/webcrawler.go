@@ -2,9 +2,12 @@ package gossiper
 
 import (
 	"fmt"
-	"github.com/mvidigueira/Peerster/dht_util"
+	"log"
 	"protobuf"
 	"time"
+
+	"github.com/mvidigueira/Peerster/Diffie-Hellman/aesencryptor"
+	"github.com/mvidigueira/Peerster/dht_util"
 
 	"github.com/mvidigueira/Peerster/dht"
 	"github.com/mvidigueira/Peerster/dto"
@@ -16,18 +19,30 @@ func (g *Gossiper) webCrawlerListenerRoutine() {
 	for packet := range g.webCrawler.OutChan {
 		switch {
 		case packet.OutBoundLinks != nil:
-			g.saveOutboundLinksInDHT(packet.OutBoundLinks)
+			go func(outboundLinks *webcrawler.OutBoundLinksPackage) {
+				//g.saveOutboundLinksInDHT(outboundLinks)
+			}(packet.OutBoundLinks)
 		case packet.CitationsPackage != nil:
-			g.saveCitationsInDHT(packet.CitationsPackage)
+			go func(citation *webcrawler.CitationsPackage) {
+				//g.saveCitationsInDHT(citation)
+			}(packet.CitationsPackage)
 		case packet.HyperlinkPackage != nil:
-			g.distributeHyperlinks(packet.HyperlinkPackage)
+			go func(hyperlinks *webcrawler.HyperlinkPackage) {
+				g.distributeHyperlinks(hyperlinks)
+			}(packet.HyperlinkPackage)
 		case packet.IndexPackage != nil:
-			g.saveKeywordsInDHT(packet.IndexPackage)
+			go func(indexPackage *webcrawler.IndexPackage) {
+				g.saveKeywordsInDHT(indexPackage)
+			}(packet.IndexPackage)
 		case packet.PageHash != nil && packet.PageHash.Type == "store":
-			g.savePageHashInDHT(packet.PageHash)
+			go func(pageHash *webcrawler.PageHashPackage) {
+				g.savePageHashInDHT(pageHash)
+			}(packet.PageHash)
 		case packet.PageHash != nil && packet.PageHash.Type == "lookup":
-			_, found := g.LookupValue(packet.PageHash.Hash, dht.PageHashBucket)
-			packet.ResChan <- found
+			go func(pageHash *webcrawler.PageHashPackage) {
+				_, found := g.LookupValue(pageHash.Hash, dht.PageHashBucket)
+				packet.ResChan <- found
+			}(packet.PageHash)
 		}
 	}
 }
@@ -74,11 +89,36 @@ func (g *Gossiper) batchSendURLS(owner *dht.NodeState, hyperlinks []string) {
 		for k, b := range batch.([]interface{}) {
 			tmp[k] = b.(string)
 		}
-		gossiperPacket := &dto.GossipPacket{
-			HyperlinkMessage: &webcrawler.HyperlinkPackage{
+		var gossiperPacket *dto.GossipPacket
+		if g.encryptDHTOperations {
+			ch := g.getKey(owner.Address)
+			key := <-ch
+			if len(key) == 0 {
+				log.Fatal("Fetching of key failed.")
+			}
+			links := &webcrawler.HyperlinkPackage{
 				Links: tmp,
-			},
+			}
+			packetBytes, err := protobuf.Encode(links)
+			if err != nil {
+				log.Fatal()
+			}
+			aesEncrypter := aesencryptor.New(key)
+			cipherText := aesEncrypter.Encrypt(packetBytes)
+
+			gossiperPacket = &dto.GossipPacket{
+				EncryptedWebCrawlerPacket: &webcrawler.EncryptedCrawlerPacket{
+					Packet: cipherText,
+				},
+			}
+		} else {
+			gossiperPacket = &dto.GossipPacket{
+				HyperlinkMessage: &webcrawler.HyperlinkPackage{
+					Links: tmp,
+				},
+			}
 		}
+
 		g.sendUDP(gossiperPacket, owner.Address)
 	}
 }
@@ -100,7 +140,12 @@ func (g *Gossiper) batchSendKeywords(owner *dht.NodeState, items []*webcrawler.K
 			fmt.Printf("Error encoding urlToKeywordMap.\n")
 			break
 		}
-		err = g.sendStore(owner, [20]byte{}, packetBytes, dht.KeywordsBucket)
+
+		if g.encryptDHTOperations {
+			err = g.sendEncryptedStore(owner, [dht_util.IDByteSize]byte{}, packetBytes, dht.KeywordsBucket)
+		} else {
+			err = g.sendStore(owner, [dht_util.IDByteSize]byte{}, packetBytes, dht.KeywordsBucket)
+		}
 		if err != nil {
 			fmt.Printf("Failed to store key.\n")
 		}
@@ -122,7 +167,11 @@ func (g *Gossiper) batchSendCitations(owner *dht.NodeState, items []*webcrawler.
 		if err != nil {
 			panic(err)
 		}
-		err = g.sendStore(owner, [20]byte{}, packetBytes, dht.CitationsBucket)
+		if g.encryptDHTOperations {
+			err = g.sendEncryptedStore(owner, [dht_util.IDByteSize]byte{}, packetBytes, dht.CitationsBucket)
+		} else {
+			err = g.sendStore(owner, [dht_util.IDByteSize]byte{}, packetBytes, dht.CitationsBucket)
+		}
 		if err != nil {
 			fmt.Printf("Failed to store key.\n")
 		}
@@ -131,8 +180,8 @@ func (g *Gossiper) batchSendCitations(owner *dht.NodeState, items []*webcrawler.
 
 // Identifies the responsible node for each hyperlink. If the hyperlink belongs to this node, then the hyperlinks are simply sent back
 // to the local webcrawler. If the hyperlinks belong to another webcrawlers domain, then they will be sent to the corresponding node.
-func (g *Gossiper) distributeHyperlinks(hyperlinkPackage *webcrawler.HyperlinkPackage) {
-	links := hyperlinkPackage.Links
+func (g *Gossiper) distributeHyperlinks(packet *webcrawler.HyperlinkPackage) {
+	links := packet.Links
 	domains := map[dht.NodeState][]string{}
 	for _, hyperlink := range links {
 		hash := dht_util.GenerateKeyHash(hyperlink)
@@ -142,7 +191,7 @@ func (g *Gossiper) distributeHyperlinks(hyperlinkPackage *webcrawler.HyperlinkPa
 			// Retry in 5 seconds.
 			go func() {
 				time.Sleep(time.Second * 5)
-				g.distributeHyperlinks(hyperlinkPackage)
+				g.distributeHyperlinks(packet)
 			}()
 			break
 		}
@@ -183,7 +232,7 @@ func (g *Gossiper) saveOutboundLinksInDHT(outboundLinks *webcrawler.OutBoundLink
 	s := make([]interface{}, len(outboundLinks.OutBoundLinks))
 	for i, v := range outboundLinks.OutBoundLinks {
 		outBoundLink := &webcrawler.OutBoundLinksPackage{
-			Url: outboundLinks.Url,
+			Url:           outboundLinks.Url,
 			OutBoundLinks: []string{v},
 		}
 		s[i] = outBoundLink
@@ -198,15 +247,20 @@ func (g *Gossiper) saveOutboundLinksInDHT(outboundLinks *webcrawler.OutBoundLink
 		if err != nil {
 			panic(err)
 		}
-		err = g.sendStore(closest, id, packetBytes, dht.LinksBucket)
+		if g.encryptDHTOperations {
+			err = g.sendEncryptedStore(closest, id, packetBytes, dht.LinksBucket)
+		} else {
+			err = g.sendStore(closest, id, packetBytes, dht.LinksBucket)
+		}
 		if err != nil {
 			fmt.Printf("Failed to store key.\n")
 		}
 	}
 }
 
-func (g *Gossiper) saveCitationsInDHT(citationsPackage *webcrawler.CitationsPackage){
+func (g *Gossiper) saveCitationsInDHT(citationsPackage *webcrawler.CitationsPackage) {
 	destinations := make(map[dht.NodeState][]*webcrawler.Citations)
+	fmt.Printf("Size of citation: %d\n.", len(citationsPackage.CitationsList))
 	for _, citation := range citationsPackage.CitationsList {
 		citation := citation //create a copy of the variable
 		id := dht_util.GenerateKeyHash(citation.Url)
@@ -228,7 +282,7 @@ func (g *Gossiper) saveCitationsInDHT(citationsPackage *webcrawler.CitationsPack
 				fmt.Println(err)
 				return
 			}
-			msg := g.newDHTStore(dest.NodeID, packetBytes, dht.CitationsBucket)
+			msg := g.newDHTStore(dest.NodeID, packetBytes, dht.CitationsBucket, false)
 			g.replyStore(msg)
 			continue
 		}
@@ -264,7 +318,7 @@ func (g *Gossiper) saveKeywordsInDHT(indexPackage *webcrawler.IndexPackage) {
 				fmt.Println(err)
 				return
 			}
-			msg := g.newDHTStore(dest.NodeID, packetBytes, dht.KeywordsBucket)
+			msg := g.newDHTStore(dest.NodeID, packetBytes, dht.KeywordsBucket, false)
 			g.replyStore(msg)
 			continue
 		}
@@ -285,4 +339,59 @@ func (g *Gossiper) savePageHashInDHT(pageHash *webcrawler.PageHashPackage) {
 	if err != nil {
 		fmt.Printf("Failed to store key %s.\n", pageHash)
 	}
+}
+
+func (g *Gossiper) getKey(dest string) chan []byte {
+	resChan := make(chan []byte)
+	go func() {
+		diffieSessions, f := g.activeDiffieHellmans[dest]
+		_, activeNegotiation := g.diffieHellmanMap[dest]
+
+		var allSessionsExpired = true
+		for _, session := range diffieSessions {
+			allSessionsExpired = session.expired()
+		}
+
+		if !activeNegotiation && allSessionsExpired {
+			// Start negotiation
+			rChannel := make(chan *dto.DiffieHellman)
+			g.diffieHellmanMap[dest] = rChannel
+			select {
+			case k := <-g.negotiateDiffieHellmanInitiator(dest):
+				resChan <- k
+			case <-time.After(time.Second * 5):
+				resChan <- []byte{}
+				log.Fatal("Failed to initiate diffie-hellman.2")
+			}
+		} else if f {
+			resChan <- diffieSessions[len(diffieSessions)-1].Key
+		} else {
+			time.Sleep(time.Second * 5)
+			g.getKey(dest)
+			return
+		}
+	}()
+	return resChan
+}
+
+func (g *Gossiper) decryptHyperlinkPackage(sender string, encryptedPacket *webcrawler.EncryptedCrawlerPacket) chan *webcrawler.HyperlinkPackage {
+	callBackChan := make(chan *webcrawler.HyperlinkPackage)
+	go func() {
+		ch := g.getKey(sender)
+		key := <-ch
+		aesEncrypter := aesencryptor.New(key)
+		cipher, err := aesEncrypter.Decrypt(encryptedPacket.Packet)
+		if err != nil {
+			fmt.Println("failed to encrypt hyperlink msg.")
+		}
+
+		hyperlinkPackage := &webcrawler.HyperlinkPackage{}
+		err = protobuf.Decode(cipher, hyperlinkPackage)
+		if err != nil {
+			log.Fatal("error decrypting crawler packet")
+		}
+		callBackChan <- hyperlinkPackage
+	}()
+
+	return callBackChan
 }

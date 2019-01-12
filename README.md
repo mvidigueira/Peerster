@@ -20,11 +20,11 @@ All of the above dependencies are go gettable.
 
 The following code sets up a DHT network consiting of three nodes. Every network needs a bootstrap node (node A) which other nodes need to have knowledge about at start up in order to join the network (node B & C).  
 
-`Peerster -UIPort=4000 -gossipAddr=127.0.0.1:7000 -name=A`
+`./Peerster -UIPort=4000 -gossipAddr=127.0.0.1:7000 -name=A`
 
-`Peerster -UIPort=4001 -gossipAddr=127.0.0.1:7001 -name=B -boot=127.0.0.1:7000`
+`./Peerster -UIPort=4001 -gossipAddr=127.0.0.1:7001 -name=B -boot=127.0.0.1:7000`
 
-`Peerster -UIPort=4002 -gossipAddr=127.0.0.1:7002 -name=C -boot=127.0.0.1:7000`
+`./Peerster -UIPort=4002 -gossipAddr=127.0.0.1:7002 -name=C -boot=127.0.0.1:7000`
 
 ### Setup crawling
 
@@ -34,11 +34,11 @@ We only want one node to parse the entry point and hence we give the flag `-craw
 
 The following code sets up a 3 node DHT & Crawling network:
 
-`Peerster -UIPort=4000 -gossipAddr=127.0.0.1:7000 -name=A`
+`./Peerster -UIPort=4000 -gossipAddr=127.0.0.1:7000 -name=A`
 
-`Peerster -UIPort=4001 -gossipAddr=127.0.0.1:7001 -name=B -boot=127.0.0.1:7000`
+`./Peerster -UIPort=4001 -gossipAddr=127.0.0.1:7001 -name=B -boot=127.0.0.1:7000`
 
-`Peerster -UIPort=4002 -gossipAddr=127.0.0.1:7002 -name=C -boot=127.0.0.1:7000 -crawlLeader`
+`./Peerster -UIPort=4002 -gossipAddr=127.0.0.1:7002 -name=C -boot=127.0.0.1:7000 -crawlLeader`
 
 The crawler saves keywords together with their frequencies for each document in the DHT. 
 
@@ -64,7 +64,11 @@ The above query will return the URL of every crawled document in the DHT which c
 
 The web UI for the search functionality can be found on port 8080 of localhost.
 
+### Encryption
 
+Enable AES encryption for all dht store/lookup operation by providing the -encryptDHSOperations flag. The AES encryption keys will be negotiated automatically using Diffie-Hellman key exchange.
+
+`./Peerster -UIPort=4002 -gossipAddr=127.0.0.1:7002 -name=C -boot=127.0.0.1:7000 -encryptDHSOperations`
 
 
 

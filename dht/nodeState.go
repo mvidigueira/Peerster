@@ -3,6 +3,7 @@ package dht
 import (
 	"fmt"
 	"strings"
+
 	. "github.com/mvidigueira/Peerster/dht_util"
 )
 
@@ -32,6 +33,7 @@ type Message struct {
 }
 
 type MessageType int
+
 const (
 	StoreT MessageType = iota
 	PingT
@@ -63,9 +65,10 @@ func (msg *Message) GetUnderlyingType() MessageType {
 }
 
 type Store struct {
-	Key  TypeID
-	Type string // PUT
-	Data []byte
+	Key       TypeID
+	Type      string // PUT
+	Data      []byte
+	Encrypted bool
 }
 
 type Ping struct{}
@@ -81,12 +84,15 @@ type NodeReply struct {
 }
 
 type ValueLookup struct {
-	Key TypeID
-	DbKey      string
-	DbBucket string
+	Key          TypeID
+	DbKey        string
+	DbBucket     string
+	Encrypted    bool
+	EncryptedKey []byte
 }
 
 type ValueReply struct {
 	NodeStates *[]*NodeState
 	Data       *[]byte
+	Encrypted  bool
 }

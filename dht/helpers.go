@@ -1,10 +1,14 @@
 package dht
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
+	"encoding/hex"
 	"fmt"
-	. "github.com/mvidigueira/Peerster/dht_util"
 	"math/bits"
+
+	. "github.com/mvidigueira/Peerster/dht_util"
 )
 
 func xorDistance(id1, id2 TypeID) (result TypeID) {
@@ -73,9 +77,14 @@ func RandNodeID(base TypeID, leadingBitsInCommon int) (generated TypeID) {
 	return
 }
 
-func InitialRandNodeID() (generated TypeID) {
-	rand.Read(generated[:])
-	fmt.Printf("Generated ID: %x\n", generated)
+func InitialRandNodeID() (privateKey *ecdsa.PrivateKey, generated TypeID) {
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		panic(err)
+	}
+	k := append(privateKey.PublicKey.X.Bytes(), privateKey.PublicKey.Y.Bytes()...)
+	copy(generated[:], k[:])
+	fmt.Printf("ID: %s\n", hex.EncodeToString(generated[:]))
 	return
 }
 
@@ -91,4 +100,3 @@ func CommonLeadingBits(id1, id2 TypeID) (inCommon int) {
 
 	return
 }
-
