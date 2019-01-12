@@ -1,11 +1,12 @@
 package dht_util
 
 import (
-	"crypto/sha1"
+	"crypto/sha512"
 	"fmt"
 )
 
-const IDByteSize = 160 / 8
+const IDByteSize = 512 / 8
+
 type TypeID [IDByteSize]byte
 
 //ConvertToTypeID - Converts a slice of undetermined size to TypeID
@@ -23,7 +24,7 @@ func ConvertToTypeID(idB []byte) (id TypeID, ok bool) {
 // Converts an arbitrary long key string to a 20byte hexa hash key.
 func GenerateKeyHash(key string) [IDByteSize]byte {
 	byteKey := []byte(key)
-	hash := sha1.Sum(byteKey)
+	hash := sha512.Sum512(byteKey)
 	//key = hex.EncodeToString(hash[:])
 	return hash
 }

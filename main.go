@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/gorilla/mux"
 	"log"
 	"net"
 	"net/http"
@@ -19,6 +18,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gorilla/mux"
+
 	"github.com/mvidigueira/Peerster/dto"
 	"github.com/mvidigueira/Peerster/fileparsing"
 	"github.com/mvidigueira/Peerster/gossiper"
@@ -29,7 +30,6 @@ var uiport string
 
 const selfDir = "/go/src/github.com/mvidigueira/Peerster"
 
-
 func main() {
 	UIPort := flag.String("UIPort", "8080", "Port for the UI client (default \"8080\")")
 	gossipAddr := flag.String("gossipAddr", "127.0.0.1:5000", "ip:port for the gossiper (default \"127.0.0.1:5000\")")
@@ -39,6 +39,8 @@ func main() {
 	simple := flag.Bool("simple", false, "run gossiper in simple broadcast mode")
 	bootstrap := flag.String("boot", "", "peer of the form ip:port that is used to join the dht network")
 	crawlLeader := flag.Bool("crawlLeader", false, "initiator of the crawl")
+	encryptStoreOperations := flag.Bool("encryptStore", false, "enables encrypting of all store operations from the webcrawler.")
+
 	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to file")
 
 	flag.Parse()
@@ -57,7 +59,7 @@ func main() {
 	if *peersStr != "" {
 		peers = strings.Split(*peersStr, ",")
 	}
-	g = gossiper.NewGossiper(*gossipAddr, *name, *UIPort, peers, *simple, *rtimeout, *bootstrap, *crawlLeader)
+	g = gossiper.NewGossiper(*gossipAddr, *name, *UIPort, peers, *simple, *rtimeout, *bootstrap, *crawlLeader, *encryptStoreOperations)
 
 	go g.Start()
 

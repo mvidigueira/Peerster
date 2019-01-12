@@ -11,6 +11,7 @@ type CrawlerPacket struct {
 	IndexPackage     *IndexPackage
 	PageHash         *PageHashPackage
 	ResChan          chan bool
+	Sender           string
 }
 
 type KeywordToURLMap struct {
@@ -19,7 +20,13 @@ type KeywordToURLMap struct {
 }
 
 type HyperlinkPackage struct {
-	Links []string
+	Links          []string
+	Encrypted      bool
+	EncryptedLinks []byte
+}
+
+type EncryptedCrawlerPacket struct {
+	Packet []byte // Shall hold a CrawlerPacket
 }
 
 type OutBoundLinksPackage struct {

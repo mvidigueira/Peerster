@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mvidigueira/Diffie-Hellman/aesencryptor"
 	"github.com/mvidigueira/Peerster/dht_util"
 	"github.com/mvidigueira/Peerster/webcrawler"
 	"github.com/reiver/go-porterstemmer"
@@ -21,6 +22,11 @@ import (
 func (g *Gossiper) newDHTStore(key dht_util.TypeID, data []byte, storeType string) *dht.Message {
 	store := &dht.Store{Key: key, Data: data, Type: storeType}
 	return &dht.Message{Nonce: rand.Uint64(), SenderID: g.dhtMyID, Store: store}
+}
+
+func (g *Gossiper) newDHTEncryptedStore(key dht_util.TypeID, data []byte, storeType string) *dht.Message {
+	store := &dht.EncryptedStore{Key: key, Data: data, Type: storeType}
+	return &dht.Message{Nonce: rand.Uint64(), SenderID: g.dhtMyID, EncryptedStore: store}
 }
 
 func (g *Gossiper) newDHTPing() *dht.Message {
@@ -95,6 +101,19 @@ func (g *Gossiper) sendStore(ns *dht.NodeState, key dht_util.TypeID, data []byte
 	msg := g.newDHTStore(key, data, storeType)
 	packet := &dto.GossipPacket{DHTMessage: msg}
 
+	g.sendUDP(packet, ns.Address)
+
+	return nil
+}
+
+// sendEncryptedStore - sends a RPC to node 'ns' for storing the KV pair ('key' - 'data')
+func (g *Gossiper) sendEncryptedStore(ns *dht.NodeState, key dht_util.TypeID, data []byte, storeType string) (err error) {
+	ch := g.getKey(ns.Address)
+	k := <-ch
+	aesEncrypter := aesencryptor.New(k)
+	cipherText := aesEncrypter.Encrypt(data)
+	msg := g.newDHTEncryptedStore([dht_util.IDByteSize]byte{}, cipherText, dht.KeywordsBucket)
+	packet := &dto.GossipPacket{DHTMessage: msg}
 	g.sendUDP(packet, ns.Address)
 
 	return nil
@@ -335,6 +354,36 @@ func (g *Gossiper) dhtMessageListenRoutine(cDHTMessage chan *dto.PacketAddressPa
 				fmt.Printf("STORE REQUEST from %x\n", msg.SenderID)
 				g.replyStore(msg)
 			}(msg)
+		case dht.EncryptedStoreT:
+			go func(msg *dht.Message) {
+				diffieSessions, f := g.activeDiffieHellmans[sender]
+				if !f {
+					fmt.Println("No key found, descarding...")
+					continue
+				}
+
+				encrypted := false
+				for i := 0; i < len(diffieSessions); i++ {
+					session := diffieSessions[len(diffieSessions)-1]
+					aesEncrypter := aesencryptor.New(session.Key)
+					data, err := aesEncrypter.Decrypt(msg.EncryptedStore.Data)
+					if err == nil {
+						encrypted = true
+						session.LastTimeUsed = time.Now()
+					}
+					msg.Store = &dht.Store{
+						Data: data,
+						Type: msg.EncryptedStore.Type,
+						Key:  msg.EncryptedStore.Key,
+					}
+					g.replyStore(msg)
+					break
+				}
+				if !encrypted {
+					fmt.Println("failed to decrypt message, disgarding..")
+				}
+			}(msg)
+
 		}
 	}
 }

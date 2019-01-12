@@ -1,9 +1,10 @@
 package gossiper
 
 import (
-	"github.com/mvidigueira/Peerster/dht_util"
 	"reflect"
 	"time"
+
+	"github.com/mvidigueira/Peerster/dht_util"
 
 	"github.com/mvidigueira/Peerster/dht"
 )
@@ -15,7 +16,6 @@ func (g *Gossiper) LookupNodes(id dht_util.TypeID) (closest []*dht.NodeState) {
 	snsa := dht.NewSafeNodeStateArray(id)
 	results := g.bucketTable.alphaClosest(id, 3)
 	snsa.InsertArray(results, g.dhtMyID)
-
 	closest = g.lookupRound(snsa)
 	myNode := &dht.NodeState{NodeID: g.dhtMyID, Address: g.address}
 	closest = dht.InsertOrdered(id, closest, myNode)

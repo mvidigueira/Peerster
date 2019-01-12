@@ -2,13 +2,14 @@ package gossiper
 
 import (
 	"fmt"
+	"math"
+
 	"github.com/bluele/gcache"
 	"github.com/dedis/protobuf"
 	"github.com/mvidigueira/Peerster/dht"
 	"github.com/mvidigueira/Peerster/dht_util"
 	"github.com/mvidigueira/Peerster/webcrawler"
 	"go.etcd.io/bbolt"
-	"math"
 )
 
 type rankerCache struct {
@@ -19,7 +20,7 @@ const (
 	cacheSize     = 10 //TODO: these values are for testing
 	dampingFactor = 0.85
 	epsilon       = 0.03
-	InitialRank = 1
+	InitialRank   = 1
 )
 
 func newRankerCache() (ranker *rankerCache) {
@@ -80,7 +81,7 @@ func (g *Gossiper) getOutboundLinksFromDb(id dht_util.TypeID) (outboundLinksPack
 //called when the node has recalculated its local Rank and wants to store
 //sending updates to the rest of the network as well
 func (g *Gossiper) setRank(urlInfo webcrawler.OutBoundLinksPackage, pageInfo RankInfo, relerr float64) {
-	if relerr < epsilon{
+	if relerr < epsilon {
 		return
 	}
 
@@ -101,7 +102,7 @@ func (g *Gossiper) setRank(urlInfo webcrawler.OutBoundLinksPackage, pageInfo Ran
 	g.batchRankUpdates(&urlInfo, &pageInfo)
 }
 
-func (g *Gossiper) batchRankUpdates(urlInfo *webcrawler.OutBoundLinksPackage, pageInfo *RankInfo){
+func (g *Gossiper) batchRankUpdates(urlInfo *webcrawler.OutBoundLinksPackage, pageInfo *RankInfo) {
 	destinations := make(map[dht.NodeState][]*RankUpdate)
 	for _, outboundLink := range urlInfo.OutBoundLinks {
 		id := dht_util.GenerateKeyHash(outboundLink)
@@ -112,7 +113,7 @@ func (g *Gossiper) batchRankUpdates(urlInfo *webcrawler.OutBoundLinksPackage, pa
 		}
 		closest := kClosest[0]
 		val, _ := destinations[*closest]
-		destinations[*closest] = append(val, &RankUpdate{OutboundLink:outboundLink, RankInfo: pageInfo})
+		destinations[*closest] = append(val, &RankUpdate{OutboundLink: outboundLink, RankInfo: pageInfo})
 	}
 
 	for dest, batch := range destinations {
@@ -142,7 +143,7 @@ func (g *Gossiper) batchRankUpdates(urlInfo *webcrawler.OutBoundLinksPackage, pa
 			if err != nil {
 				panic(err)
 			}
-			err = g.sendStore(&dest, [20]byte{}, packetBytes, dht.PageRankBucket)
+			err = g.sendStore(&dest, [dht_util.IDByteSize]byte{}, packetBytes, dht.PageRankBucket)
 			if err != nil {
 				fmt.Printf("Failed to store key.\n")
 			}
@@ -150,11 +151,11 @@ func (g *Gossiper) batchRankUpdates(urlInfo *webcrawler.OutBoundLinksPackage, pa
 	}
 }
 
-func (page *RankInfo) updatePageRank(g *Gossiper) (float64){
+func (page *RankInfo) updatePageRank(g *Gossiper) float64 {
 	return page.updatePageRankWithInfo(nil, g)
 }
 
-func (page *RankInfo) updatePageRankWithInfo(newInfo *RankInfo, g *Gossiper) (relerr float64){
+func (page *RankInfo) updatePageRankWithInfo(newInfo *RankInfo, g *Gossiper) (relerr float64) {
 	citations := &webcrawler.Citations{}
 	url := page.Url
 	id := dht_util.GenerateKeyHash(url)
@@ -190,7 +191,7 @@ func (page *RankInfo) updatePageRankWithInfo(newInfo *RankInfo, g *Gossiper) (re
 	newRank := (1 - dampingFactor) + inlinkSum
 	page.Rank = newRank
 
-	relerr = math.Abs(oldRank - newRank)/newRank
+	relerr = math.Abs(oldRank-newRank) / newRank
 	return
 }
 
