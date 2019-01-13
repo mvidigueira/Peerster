@@ -1,7 +1,7 @@
 package dht
 
 import (
-	"protobuf"
+	"github.com/dedis/protobuf"
 
 	. "github.com/mvidigueira/Peerster/dht_util"
 	"github.com/mvidigueira/Peerster/webcrawler"

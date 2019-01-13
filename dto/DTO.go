@@ -4,9 +4,9 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"github.com/dedis/protobuf"
 	"log"
 	"net"
-	"protobuf"
 	"time"
 
 	"github.com/mvidigueira/Peerster/dht_util"

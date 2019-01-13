@@ -7,13 +7,13 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
+	"github.com/dedis/protobuf"
 	"log"
 	"math/big"
-	"protobuf"
 	"time"
 
-	"github.com/mvidigueira/Peerster/Diffie-Hellman/diffiehellman"
 	"github.com/mvidigueira/Peerster/dht_util"
+	"github.com/mvidigueira/Peerster/diffie_hellman/diffiehellman"
 	"github.com/mvidigueira/Peerster/dto"
 )
 

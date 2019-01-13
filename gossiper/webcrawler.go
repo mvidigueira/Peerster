@@ -2,12 +2,12 @@ package gossiper
 
 import (
 	"fmt"
+	"github.com/dedis/protobuf"
 	"log"
-	"protobuf"
 	"time"
 
-	"github.com/mvidigueira/Peerster/Diffie-Hellman/aesencryptor"
 	"github.com/mvidigueira/Peerster/dht_util"
+	"github.com/mvidigueira/Peerster/diffie_hellman/aesencryptor"
 
 	"github.com/mvidigueira/Peerster/dht"
 	"github.com/mvidigueira/Peerster/dto"

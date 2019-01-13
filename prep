@@ -1,0 +1,2 @@
+rm *_index.db
+go install 

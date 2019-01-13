@@ -46,8 +46,8 @@ type ranker struct {
 	cache         gcache.Cache
 	hits          int
 	totalAccesses int
-	hll *hyperloglog.Sketch
-	hllMux sync.Mutex
+	hll           *hyperloglog.Sketch
+	hllMux        sync.Mutex
 	mux           sync.Mutex
 }
 
@@ -116,7 +116,7 @@ func (g *Gossiper) GetDocumentEstimate() int {
 	if hllEstimate > numberOfDocuments {
 		numberOfDocuments = hllEstimate
 	}
-	log.Printf("hll estimate: %d\n",hllEstimate)
+	log.Printf("hll estimate: %d\n", hllEstimate)
 
 	return numberOfDocuments
 }

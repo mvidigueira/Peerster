@@ -3,12 +3,12 @@ package main
 import (
 	"encoding/hex"
 	"fmt"
+	"github.com/dedis/protobuf"
 	"github.com/mvidigueira/Peerster/dht_util"
 	"io/ioutil"
 	"log"
 	"net"
 	"os"
-	"protobuf"
 	"strings"
 
 	"github.com/mvidigueira/Peerster/dto"

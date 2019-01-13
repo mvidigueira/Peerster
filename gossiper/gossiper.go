@@ -3,10 +3,10 @@ package gossiper
 import (
 	"crypto/ecdsa"
 	"fmt"
+	"github.com/dedis/protobuf"
 	"log"
 	"math/rand"
 	"net"
-	"protobuf"
 	"strconv"
 	"time"
 
@@ -57,13 +57,13 @@ type Gossiper struct {
 
 	blockchainLedger *BlockchainLedger
 
-	dhtMyID      [dht_util.IDByteSize]byte
-	dhtChanMap   *dht.ChanMap
-	bucketTable  *bucketTable
-	dhtDb        *dht.Storage
-	dhtBootstrap string
-	webCrawler   *webcrawler.Crawler
-	pRanker  *ranker
+	dhtMyID              [dht_util.IDByteSize]byte
+	dhtChanMap           *dht.ChanMap
+	bucketTable          *bucketTable
+	dhtDb                *dht.Storage
+	dhtBootstrap         string
+	webCrawler           *webcrawler.Crawler
+	pRanker              *ranker
 	diffieHellmanMap     map[string](chan *dto.DiffieHellman)
 	activeDiffieHellmans map[string][]*DiffieHellmanSession
 	encryptDHTOperations bool
@@ -120,8 +120,8 @@ func NewGossiper(address, name string, UIport string, peers []string, simple boo
 		dhtChanMap:   dht.NewChanMap(),
 		dhtBootstrap: dhtBootstrap,
 
-		webCrawler:  webcrawler.New(crawlLeader),
-		pRanker: newRanker(),
+		webCrawler:           webcrawler.New(crawlLeader),
+		pRanker:              newRanker(),
 		diffieHellmanMap:     map[string](chan *dto.DiffieHellman){},
 		activeDiffieHellmans: map[string]([]*DiffieHellmanSession){},
 		encryptDHTOperations: encryptDHTOperations,

@@ -1,5 +1,7 @@
 Peerster
-/client/client
+.idea/
+*.prof
+*.png
 *.out
 *.tar.gz
 /github.com*

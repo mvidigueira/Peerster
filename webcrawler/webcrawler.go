@@ -90,7 +90,6 @@ func (wc *Crawler) crawl() {
 				}
 				wc.mux.Unlock()*/
 
-
 				fmt.Printf("Crawled %s, found %d hyperlinks and %d keywords.\n", nextPage, len(page.Hyperlinks), len(page.KeywordFrequencies))
 
 				// Lookup the page hash in the DHT in order to prevent parsing of a page which has already been crawled by another node

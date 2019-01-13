@@ -2,15 +2,15 @@ package gossiper
 
 import (
 	"fmt"
+	"github.com/dedis/protobuf"
 	"log"
 	"math/rand"
-	"protobuf"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/mvidigueira/Peerster/Diffie-Hellman/aesencryptor"
 	"github.com/mvidigueira/Peerster/dht_util"
+	"github.com/mvidigueira/Peerster/diffie_hellman/aesencryptor"
 	"github.com/mvidigueira/Peerster/webcrawler"
 	"github.com/reiver/go-porterstemmer"
 	"go.etcd.io/bbolt"
@@ -468,7 +468,7 @@ func (g *Gossiper) DoSearch(query string) (rankedResults webcrawler.RankedResult
 
 	i := 0
 	var newResults *webcrawler.KeywordToURLMap
-	for ; i<len(tokens); i++{
+	for ; i < len(tokens); i++ {
 		t := tokens[i]
 		if len(t) < webcrawler.MinWordLen {
 			continue
@@ -476,7 +476,7 @@ func (g *Gossiper) DoSearch(query string) (rankedResults webcrawler.RankedResult
 		newResults = g.lookupWord(t)
 		if newResults == nil {
 			log.Printf("TERM %s NOT FOUND \n", t)
-		}else{
+		} else {
 			break
 		}
 	}
