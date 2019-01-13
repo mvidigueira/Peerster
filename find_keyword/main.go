@@ -1,8 +1,8 @@
-package util
+package main
 
 import (
 	"flag"
-	"github.com/boltdb/bolt"
+	bolt "go.etcd.io/bbolt"
 	"github.com/mvidigueira/Peerster/dht"
 	"github.com/mvidigueira/Peerster/dht_util"
 	"github.com/reiver/go-porterstemmer"
