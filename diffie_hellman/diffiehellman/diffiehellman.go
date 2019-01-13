@@ -3,7 +3,6 @@ package diffiehellman
 import (
 	"crypto/rand"
 	"crypto/sha256"
-	"fmt"
 	"log"
 	"math/big"
 )
@@ -44,7 +43,6 @@ func P() *big.Int {
 */
 
 func (dh *DiffieHellman) GeneratePublicKey() []byte {
-	fmt.Println("BEFORE")
 	return new(big.Int).Exp(dh.g, dh.secret, dh.p).Bytes()
 }
 

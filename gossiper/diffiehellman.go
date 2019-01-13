@@ -77,8 +77,6 @@ func (g *Gossiper) diffieListenRoutine(cDiffieHellman chan *dto.PacketAddressPai
 			fmt.Println(pap.GetSenderAddress())
 			go g.negotiateDiffieHellman(pap.GetSenderAddress(), pap.Packet.DiffieHellman.NodeID, pap.Packet.DiffieHellman)
 		} else {
-			fmt.Println(f)
-			fmt.Println(len(d))
 			if f && len(d) > 0 {
 				go func() {
 					session := g.getSession(d, pap.Packet.DiffieHellman.ID)
@@ -161,8 +159,6 @@ func (g *Gossiper) negotiateDiffieHellmanInitiator(dest string, nodeID [dht_util
 		}
 
 		// Send ack
-		fmt.Println("SENDING ACK INIT")
-
 		ack := g.diffieAcklowledge(dest, token64)
 
 		// Wait for ack
@@ -247,7 +243,6 @@ func (g *Gossiper) negotiateDiffieHellman(dest string, nodeID [dht_util.IDByteSi
 	}
 
 	// Send ack
-	fmt.Println("SENDING ACK REC")
 	g.diffieAcklowledge(dest, packet.ID)
 
 	// Save symmetric key
