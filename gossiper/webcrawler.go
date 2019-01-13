@@ -152,8 +152,11 @@ func (g *Gossiper) batchSendURLS(owner *dht.NodeState, hyperlinks []string) {
 		}
 		var gossiperPacket *dto.GossipPacket
 		if g.encryptDHTOperations {
-			ch := g.getKey(owner.Address)
+			ch := g.getKey(owner.Address, owner.NodeID)
 			key := <-ch
+			if key == nil {
+				return
+			}
 			if len(key) == 0 {
 				log.Fatal("Fetching of key failed.")
 			}
@@ -170,6 +173,7 @@ func (g *Gossiper) batchSendURLS(owner *dht.NodeState, hyperlinks []string) {
 			gossiperPacket = &dto.GossipPacket{
 				EncryptedWebCrawlerPacket: &webcrawler.EncryptedCrawlerPacket{
 					Packet: cipherText,
+					Origin: g.dhtMyID,
 				},
 			}
 		} else {
@@ -403,12 +407,16 @@ func (g *Gossiper) savePageHashInDHT(pageHash *webcrawler.PageHashPackage) {
 	}
 }
 
-func (g *Gossiper) getKey(dest string) chan []byte {
+func (g *Gossiper) getKey(dest string, nodeID [dht_util.IDByteSize]byte) chan []byte {
 	resChan := make(chan []byte)
 	go func() {
-		diffieSessions, f := g.activeDiffieHellmans[dest]
-		_, activeNegotiation := g.diffieHellmanMap[dest]
+		g.activeDiffieHellmanMutex.Lock()
+		diffieSessions, f := g.activeDiffieHellmans[nodeID]
+		g.activeDiffieHellmanMutex.Unlock()
 
+		g.diffieHellmanMapMutex.Lock()
+		_, activeNegotiation := g.diffieHellmanMap[nodeID]
+		g.diffieHellmanMapMutex.Unlock()
 		var allSessionsExpired = true
 		for _, session := range diffieSessions {
 			allSessionsExpired = session.expired()
@@ -416,21 +424,24 @@ func (g *Gossiper) getKey(dest string) chan []byte {
 
 		if !activeNegotiation && allSessionsExpired {
 			// Start negotiation
-			rChannel := make(chan *dto.DiffieHellman)
-			g.diffieHellmanMap[dest] = rChannel
 			select {
-			case k := <-g.negotiateDiffieHellmanInitiator(dest):
+			case k := <-g.negotiateDiffieHellmanInitiator(dest, nodeID):
+				if k == nil {
+					delete(g.diffieHellmanMap, nodeID)
+					fmt.Println("Failed to initiate diffie-hellman. Retrying...")
+					resChan <- nil
+				}
 				resChan <- k
+				delete(g.diffieHellmanMap, nodeID)
 			case <-time.After(time.Second * 30):
+				delete(g.diffieHellmanMap, nodeID)
 				fmt.Println("Failed to initiate diffie-hellman.2")
-				g.getKey(dest)
+				resChan <- nil
 			}
 		} else if f {
 			resChan <- diffieSessions[len(diffieSessions)-1].Key
 		} else {
-			time.Sleep(time.Second * 5)
-			g.getKey(dest)
-			return
+			resChan <- nil
 		}
 	}()
 	return resChan
@@ -439,8 +450,11 @@ func (g *Gossiper) getKey(dest string) chan []byte {
 func (g *Gossiper) decryptHyperlinkPackage(sender string, encryptedPacket *webcrawler.EncryptedCrawlerPacket) chan *webcrawler.HyperlinkPackage {
 	callBackChan := make(chan *webcrawler.HyperlinkPackage)
 	go func() {
-		ch := g.getKey(sender)
+		ch := g.getKey(sender, encryptedPacket.Origin)
 		key := <-ch
+		if key == nil {
+			return
+		}
 		aesEncrypter := aesencryptor.New(key)
 		cipher, err := aesEncrypter.Decrypt(encryptedPacket.Packet)
 		if err != nil {

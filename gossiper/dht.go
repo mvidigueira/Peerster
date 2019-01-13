@@ -106,8 +106,13 @@ func (g *Gossiper) sendStore(ns *dht.NodeState, key dht_util.TypeID, data []byte
 
 // sendEncryptedStore - sends a RPC to node 'ns' for storing the KV pair ('key' - 'data')
 func (g *Gossiper) sendEncryptedStore(ns *dht.NodeState, key dht_util.TypeID, data []byte, storeType string) (err error) {
-	ch := g.getKey(ns.Address)
+	ch := g.getKey(ns.Address, ns.NodeID)
 	k := <-ch
+	if k == nil {
+		fmt.Println("failed to get key, sending unencrypted...")
+		g.sendStore(ns, key, data, storeType)
+		return
+	}
 	aesEncrypter := aesencryptor.New(k)
 	cipherText := aesEncrypter.Encrypt(data)
 	msg := g.newDHTStore(key, cipherText, storeType, true)
@@ -275,11 +280,16 @@ func (g *Gossiper) replyLookupNode(senderAddr string, lookup *dht.Message) {
 func (g *Gossiper) sendLookupKey(ns *dht.NodeState, key dht_util.TypeID, dbBucket string, encrypt bool) chan *dht.Message {
 	msg := g.newDHTValueLookup(key, dbBucket, encrypt)
 	if g.encryptDHTOperations {
-		ch := g.getKey(ns.Address)
+		ch := g.getKey(ns.Address, ns.NodeID)
 		k := <-ch
-		aesEncrypter := aesencryptor.New(k)
-		cipherText := aesEncrypter.Encrypt(msg.ValueLookup.Key[:])
-		msg.ValueLookup.EncryptedKey = cipherText
+		if k == nil {
+			fmt.Println("failed to get key, falling back on default.")
+			msg.ValueLookup.Encrypted = false
+		} else {
+			aesEncrypter := aesencryptor.New(k)
+			cipherText := aesEncrypter.Encrypt(msg.ValueLookup.Key[:])
+			msg.ValueLookup.EncryptedKey = cipherText
+		}
 	}
 	rpcNum := msg.Nonce
 	packet := &dto.GossipPacket{DHTMessage: msg}
@@ -297,7 +307,9 @@ func (g *Gossiper) sendLookupKey(ns *dht.NodeState, key dht_util.TypeID, dbBucke
 func (g *Gossiper) replyLookupKey(senderAddr string, lookupKey *dht.Message) {
 	var key [dht_util.IDByteSize]byte
 	if lookupKey.ValueLookup.Encrypted {
-		diffieSessions, f := g.activeDiffieHellmans[senderAddr]
+		g.activeDiffieHellmanMutex.Lock()
+		diffieSessions, f := g.activeDiffieHellmans[lookupKey.SenderID]
+		g.activeDiffieHellmanMutex.Unlock()
 		if !f {
 			fmt.Println("No key found, descarding lookup...")
 			return
@@ -374,16 +386,16 @@ func (g *Gossiper) dhtMessageListenRoutine(cDHTMessage chan *dto.PacketAddressPa
 					//fmt.Printf("VALUE REPLY with data: %x from %x\n", *msg.ValueReply.Data, msg.SenderID)
 				} else {
 					fmt.Println("VALUE REPLY")
-					if msg.ValueReply.Encrypted {
-						log.Fatal("EEEEEEERRRRRROOOO")
-					}
 				}
 				g.dhtChanMap.InformListener(msg.Nonce, msg)
 			}(msg)
 		case dht.StoreT:
 			if msg.Store.Encrypted {
 				go func(msg *dht.Message) {
-					diffieSessions, f := g.activeDiffieHellmans[sender]
+					g.activeDiffieHellmanMutex.Lock()
+					diffieSessions, f := g.activeDiffieHellmans[msg.SenderID]
+					g.activeDiffieHellmanMutex.Unlock()
+
 					if !f {
 						fmt.Println("No key found, discarding...")
 						return

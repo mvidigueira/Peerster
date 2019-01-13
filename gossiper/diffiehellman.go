@@ -39,13 +39,15 @@ func (g *Gossiper) CleanOldDiffieHellmanSessionsRoutine() {
 	for {
 		select {
 		case <-time.After(time.Second * 5):
+			g.activeDiffieHellmanMutex.Lock()
 			for key, v := range g.activeDiffieHellmans {
 				for _, session := range v {
-					if session.expired() && time.Now().After(session.LastTimeUsed.Add(time.Second*5)) {
+					if session.expired() && time.Now().After(session.LastTimeUsed.Add(time.Second*10)) {
 						delete(g.activeDiffieHellmans, key)
 					}
 				}
 			}
+			g.activeDiffieHellmanMutex.Unlock()
 		}
 	}
 }
@@ -53,29 +55,27 @@ func (g *Gossiper) CleanOldDiffieHellmanSessionsRoutine() {
 func (g *Gossiper) diffieListenRoutine(cDiffieHellman chan *dto.PacketAddressPair) {
 	for pap := range cDiffieHellman {
 		g.addToPeers(pap.GetSenderAddress())
-		d, f := g.diffieHellmanMap[pap.GetSenderAddress()]
+		g.diffieHellmanMapMutex.Lock()
+		d, f := g.diffieHellmanMap[pap.Packet.DiffieHellman.NodeID]
+		g.diffieHellmanMapMutex.Unlock()
 		if !f {
-			// New diffie hellman request
-			responseChannel := make(chan *dto.DiffieHellman)
-			g.diffieHellmanMap[pap.GetSenderAddress()] = responseChannel
 			// Start diffiehellman process
-			go g.negotiateDiffieHellman(responseChannel, pap.GetSenderAddress(), pap.Packet.DiffieHellman)
+			go g.negotiateDiffieHellman(pap.GetSenderAddress(), pap.Packet.DiffieHellman.NodeID, pap.Packet.DiffieHellman)
 		} else {
 			d <- pap.Packet.DiffieHellman
 		}
 	}
 }
 
-func (g *Gossiper) negotiateDiffieHellmanInitiator(dest string) chan ([]byte) {
+func (g *Gossiper) negotiateDiffieHellmanInitiator(dest string, nodeID [dht_util.IDByteSize]byte) chan ([]byte) {
 
 	callBackChannel := make(chan []byte)
 
 	go func() {
-		// Create channel to map responses back to this routine.
-		rChannel, f := g.diffieHellmanMap[dest]
-		if !f {
-			log.Fatal("key not found negitate diffie.")
-		}
+		g.diffieHellmanMapMutex.Lock()
+		rChannel := make(chan *dto.DiffieHellman)
+		g.diffieHellmanMap[nodeID] = rChannel
+		g.diffieHellmanMapMutex.Unlock()
 
 		// Create a diffie hellman instance and a diffie hellman public key which will be used
 		// only for the key exchange
@@ -89,6 +89,8 @@ func (g *Gossiper) negotiateDiffieHellmanInitiator(dest string) chan ([]byte) {
 			G:               fmt.Sprintf("%x", diffiehellman.Group()),
 			DiffiePublicKey: diffiePublicKey,
 			EcdsaPublicKey:  g.dhtMyID[:],
+			NodeID:          g.dhtMyID,
+			Init:            true,
 		}
 		r, s, err := g.signPacket(diffiePacket)
 		if err != nil {
@@ -105,22 +107,31 @@ func (g *Gossiper) negotiateDiffieHellmanInitiator(dest string) chan ([]byte) {
 		select {
 		case r := <-rChannel:
 			reply = r
-		case <-time.After(time.Second * 5):
+		case <-time.After(time.Second * 15):
 			fmt.Println("Timeout, aborting.")
-			delete(g.diffieHellmanMap, dest)
+			g.diffieHellmanMapMutex.Lock()
+			delete(g.diffieHellmanMap, nodeID)
+			g.diffieHellmanMapMutex.Unlock()
+			callBackChannel <- nil
 			return
 		}
 
 		ok := g.verifyPublicKey(reply.EcdsaPublicKey, dest)
 		if !ok {
 			fmt.Println("Failed to verify public key.")
-			delete(g.diffieHellmanMap, dest)
+			g.diffieHellmanMapMutex.Lock()
+			delete(g.diffieHellmanMap, nodeID)
+			g.diffieHellmanMapMutex.Unlock()
+			callBackChannel <- nil
 			return
 		}
 		ok = g.verifySignature(reply)
 		if !ok {
 			fmt.Println("Message signature not ok. Aborting diffie-hellman key exchange.3")
-			delete(g.diffieHellmanMap, dest)
+			g.diffieHellmanMapMutex.Lock()
+			delete(g.diffieHellmanMap, nodeID)
+			g.diffieHellmanMapMutex.Unlock()
+			callBackChannel <- nil
 			return
 		}
 
@@ -128,18 +139,25 @@ func (g *Gossiper) negotiateDiffieHellmanInitiator(dest string) chan ([]byte) {
 		ack := g.diffieAcklowledge(dest)
 
 		// Wait for ack
-		ok, _ = g.waitForAcknowledge(dest, rChannel)
+		ok, _ = g.waitForAcknowledge(dest, nodeID, rChannel)
 		if !ok {
 			fmt.Println("failed to get ack.")
-			delete(g.diffieHellmanMap, dest)
+			g.diffieHellmanMapMutex.Lock()
+			delete(g.diffieHellmanMap, nodeID)
+			g.diffieHellmanMapMutex.Unlock()
+			callBackChannel <- nil
 			return
 		}
 
 		symmetricKey := diffieHellman.GenerateSymmetricKey(reply.DiffiePublicKey)
 
-		g.activeDiffieHellmans[dest] = append(g.activeDiffieHellmans[dest], NewDiffieHellmanSession(symmetricKey, ack.ExpirationDate))
+		g.activeDiffieHellmanMutex.Lock()
+		g.activeDiffieHellmans[nodeID] = append(g.activeDiffieHellmans[nodeID], NewDiffieHellmanSession(symmetricKey, ack.ExpirationDate))
+		g.activeDiffieHellmanMutex.Unlock()
 
-		delete(g.diffieHellmanMap, dest)
+		g.diffieHellmanMapMutex.Lock()
+		delete(g.diffieHellmanMap, nodeID)
+		g.diffieHellmanMapMutex.Unlock()
 
 		fmt.Printf("Key setup with %s\n", dest)
 
@@ -148,15 +166,28 @@ func (g *Gossiper) negotiateDiffieHellmanInitiator(dest string) chan ([]byte) {
 	return callBackChannel
 }
 
-func (g *Gossiper) negotiateDiffieHellman(ch chan *dto.DiffieHellman, dest string, packet *dto.DiffieHellman) {
+func (g *Gossiper) negotiateDiffieHellman(dest string, nodeID [dht_util.IDByteSize]byte, packet *dto.DiffieHellman) {
 
 	// Create channel to map responses back to this routine.
 	rChannel := make(chan *dto.DiffieHellman)
-	g.diffieHellmanMap[dest] = rChannel
+	g.diffieHellmanMapMutex.Lock()
+	g.diffieHellmanMap[nodeID] = rChannel
+	g.diffieHellmanMapMutex.Unlock()
 
 	// Get group and p used in diffie hellman
-	group, _ := new(big.Int).SetString(packet.G, 16)
-	p, _ := new(big.Int).SetString(packet.P, 16)
+	group, b := new(big.Int).SetString(packet.G, 16)
+	if !b {
+		fmt.Println(packet.G)
+		fmt.Println(b)
+		log.Fatal("AWDAWD123")
+
+	}
+	p, b := new(big.Int).SetString(packet.P, 16)
+	if !b {
+		fmt.Println(packet.P)
+		fmt.Println(b)
+		log.Fatal("AWDAWD321")
+	}
 	diffieHellman := diffiehellman.New(group, p)
 
 	// generate symmetric key
@@ -175,11 +206,15 @@ func (g *Gossiper) negotiateDiffieHellman(ch chan *dto.DiffieHellman, dest strin
 		G:               packet.G,
 		DiffiePublicKey: diffiePublicKey,
 		EcdsaPublicKey:  g.dhtMyID[:],
+		NodeID:          g.dhtMyID,
+		Init:            false,
 	}
 	r, s, err := g.signPacket(diffiePacket)
 	if err != nil {
 		fmt.Errorf("could not sign request: %v", err)
-		delete(g.diffieHellmanMap, dest)
+		g.diffieHellmanMapMutex.Lock()
+		delete(g.diffieHellmanMap, nodeID)
+		g.diffieHellmanMapMutex.Unlock()
 		return
 	}
 	diffiePacket.S = s
@@ -190,10 +225,12 @@ func (g *Gossiper) negotiateDiffieHellman(ch chan *dto.DiffieHellman, dest strin
 	}, dest)
 
 	// Wait for ack
-	ok, ack := g.waitForAcknowledge(dest, rChannel)
+	ok, ack := g.waitForAcknowledge(dest, nodeID, rChannel)
 	if !ok {
 		fmt.Println("failed to get ack.")
-		delete(g.diffieHellmanMap, dest)
+		g.diffieHellmanMapMutex.Lock()
+		delete(g.diffieHellmanMap, nodeID)
+		g.diffieHellmanMapMutex.Unlock()
 		return
 	}
 
@@ -201,10 +238,14 @@ func (g *Gossiper) negotiateDiffieHellman(ch chan *dto.DiffieHellman, dest strin
 	g.diffieAcklowledge(dest)
 
 	// Save symmetric key
-	g.activeDiffieHellmans[dest] = append(g.activeDiffieHellmans[dest], NewDiffieHellmanSession(symmetricKey, ack.ExpirationDate))
+	g.activeDiffieHellmanMutex.Lock()
+	g.activeDiffieHellmans[nodeID] = append(g.activeDiffieHellmans[nodeID], NewDiffieHellmanSession(symmetricKey, ack.ExpirationDate))
+	g.activeDiffieHellmanMutex.Unlock()
 
 	// Clean up
-	delete(g.diffieHellmanMap, dest)
+	g.diffieHellmanMapMutex.Lock()
+	delete(g.diffieHellmanMap, nodeID)
+	g.diffieHellmanMapMutex.Unlock()
 
 	fmt.Println(symmetricKey)
 	fmt.Printf("Key setup with %s\n", dest)
@@ -266,7 +307,11 @@ func (g *Gossiper) verifyPublicKey(key []byte, sender string) bool {
 
 // Send acknowledgement package
 func (g *Gossiper) diffieAcklowledge(dest string) *dto.DiffieHellman {
-	ack := &dto.DiffieHellman{EcdsaPublicKey: g.dhtMyID[:], ExpirationDate: time.Now().Local().Add(time.Second * time.Duration(60))}
+	ack := &dto.DiffieHellman{
+		EcdsaPublicKey: g.dhtMyID[:],
+		NodeID:         g.dhtMyID,
+		Init:           false,
+		ExpirationDate: time.Now().Local().Add(time.Second * time.Duration(10))}
 	r, s, err := g.signPacket(ack)
 	if err != nil {
 		log.Fatal("could not sign request")
@@ -280,7 +325,7 @@ func (g *Gossiper) diffieAcklowledge(dest string) *dto.DiffieHellman {
 	return ack
 }
 
-func (g *Gossiper) waitForAcknowledge(dest string, responseChan chan *dto.DiffieHellman) (bool, *dto.DiffieHellman) {
+func (g *Gossiper) waitForAcknowledge(dest string, nodeID [dht_util.IDByteSize]byte, responseChan chan *dto.DiffieHellman) (bool, *dto.DiffieHellman) {
 	select {
 	case res := <-responseChan:
 		ok := g.verifyPublicKey(res.EcdsaPublicKey, dest)
@@ -296,7 +341,9 @@ func (g *Gossiper) waitForAcknowledge(dest string, responseChan chan *dto.Diffie
 		return true, res
 	case <-time.After(time.Second * 15):
 		fmt.Println("Timeout, aborting.")
-		delete(g.diffieHellmanMap, dest)
+		g.diffieHellmanMapMutex.Lock()
+		delete(g.diffieHellmanMap, nodeID)
+		g.diffieHellmanMapMutex.Unlock()
 		return false, nil
 	}
 }

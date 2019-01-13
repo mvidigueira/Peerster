@@ -29,6 +29,7 @@ type HyperlinkPackage struct {
 
 type EncryptedCrawlerPacket struct {
 	Packet []byte // Shall hold a CrawlerPacket
+	Origin [dht_util.IDByteSize]byte
 }
 
 type OutBoundLinksPackage struct {
