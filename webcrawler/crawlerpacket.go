@@ -1,20 +1,19 @@
 package webcrawler
 
 import (
-	"github.com/mvidigueira/Peerster/bloomfilter"
 	"github.com/mvidigueira/Peerster/dht_util"
 )
 
 type CrawlerPacket struct {
-	HyperlinkPackage   *HyperlinkPackage
-	OutBoundLinks      *OutBoundLinksPackage
-	CitationsPackage   *CitationsPackage
-	IndexPackage       *IndexPackage
-	PageHash           *PageHashPackage
-	ResChan            chan bool
-	Sender             string
-	BloomFilterPackage *BloomFilterPackage
-	Done               *DoneCrawl
+	HyperlinkPackage *HyperlinkPackage
+	OutBoundLinks    *OutBoundLinksPackage
+	CitationsPackage *CitationsPackage
+	IndexPackage     *IndexPackage
+	PageHash         *PageHashPackage
+	ResChan          chan bool
+	Sender           string
+	PastMapPackage   *PastMapPackage
+	Done             *DoneCrawl
 }
 
 type KeywordToURLMap struct {
@@ -56,8 +55,8 @@ type PageHashPackage struct {
 	Type string
 }
 
-type BloomFilterPackage struct {
-	Filter *bloomfilter.BloomFilter
+type PastMapPackage struct {
+	Content []byte
 }
 
 type DoneCrawl struct {

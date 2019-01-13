@@ -1,30 +1,32 @@
 package dht
 
 import (
-	"crypto/sha1"
+	"bytes"
+	"crypto/sha512"
 	"encoding/binary"
+	"encoding/gob"
+	"errors"
 	"log"
 
 	"github.com/dedis/protobuf"
 
-	"github.com/mvidigueira/Peerster/bloomfilter"
 	. "github.com/mvidigueira/Peerster/dht_util"
 	"github.com/mvidigueira/Peerster/webcrawler"
 	bolt "go.etcd.io/bbolt"
 )
 
 const queueCountID = "queCount"
-const bloomFilterStateID = "bloomFilter"
+const pastMapID = "pastMap"
 
 const (
-	KeywordsBucket    = "keywords"
-	LinksBucket       = "links"
-	CitationsBucket   = "citations"
-	PageHashBucket    = "pageHash"
-	PageRankBucket    = "pageRank"
-	CrawlQueueBucket  = "crawlQueue"
-	QueueIndexBucket  = "queueIndex"
-	BloomFilterBucket = "bloomFilter"
+	KeywordsBucket   = "keywords"
+	LinksBucket      = "links"
+	CitationsBucket  = "citations"
+	PageHashBucket   = "pageHash"
+	PageRankBucket   = "pageRank"
+	CrawlQueueBucket = "crawlQueue"
+	QueueIndexBucket = "queueIndex"
+	PastMapBucket    = "pastMap"
 )
 
 type Storage struct {
@@ -39,7 +41,7 @@ type Storage struct {
 
 func NewStorage(gossiperName string) (s *Storage) {
 	db, err := bolt.Open(gossiperName+"_index.db", 0666, nil)
-	buckets := []string{KeywordsBucket, LinksBucket, PageHashBucket, CrawlQueueBucket, QueueIndexBucket, CitationsBucket, PageRankBucket, BloomFilterBucket}
+	buckets := []string{KeywordsBucket, LinksBucket, PageHashBucket, CrawlQueueBucket, QueueIndexBucket, CitationsBucket, PageRankBucket, PastMapBucket}
 	if err != nil {
 		panic(err)
 	}
@@ -189,7 +191,7 @@ func (s Storage) UpdateCrawlQueue(data []byte) (err error) {
 	err = s.Db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte("crawlQueue"))
 		id, _ := b.NextSequence()
-		newURLHash := sha1.Sum(Itob(int(id) - 1))
+		newURLHash := sha512.Sum512(Itob(int(id) - 1))
 		err = b.Put(newURLHash[:], data)
 		return err
 	})
@@ -208,7 +210,7 @@ func (s Storage) CrawlQueueHeadPointer() (uint64, bool) {
 }
 
 // Returns the url pointed to by the crawl queue pointer.
-func (s Storage) CrawlQueueHead() string {
+func (s Storage) CrawlQueueHead() (string, error) {
 
 	// Get sequence number of queue head
 	queueHash := GenerateKeyHash(queueCountID)
@@ -219,10 +221,11 @@ func (s Storage) CrawlQueueHead() string {
 	headSequenceNumber := binary.BigEndian.Uint64(val)
 
 	// Get head of queue
-	newURLHash := sha1.Sum(Itob(int(headSequenceNumber)))
+	newURLHash := sha512.Sum512(Itob(int(headSequenceNumber)))
 	head, found := s.Retrieve(newURLHash, "crawlQueue")
 	if !found {
-		log.Fatal("Error, Could not find of queue.")
+		log.Println("Error, Could not find head of queue.")
+		return "", errors.New("crawl queue head not found")
 	}
 
 	// Update pointer to head of queue
@@ -231,33 +234,29 @@ func (s Storage) CrawlQueueHead() string {
 		log.Fatal("Error, updating queue head sequence number")
 	}
 
-	return string(head)
+	return string(head), nil
 }
 
-// Saves a bloom filter to dht.
-func (s Storage) SaveBloomFilter(bloomFilter *bloomfilter.BloomFilter) {
-	bytes, err := protobuf.Encode(bloomFilter)
-	if err != nil {
-		log.Fatal("Error, decoding bloom filter.")
-	}
-	key := GenerateKeyHash(bloomFilterStateID)
-	s.Put(key, bytes, bloomFilterStateID)
+func (s Storage) SavePast(past []byte) {
+	key := GenerateKeyHash(pastMapID)
+	s.Put(key, past, pastMapID)
 }
 
-// Returns old bloom filter from dht.
-func (s Storage) GetBloomFilter() *bloomfilter.BloomFilter {
+func (s Storage) GetPast() map[string]bool {
 	// Restore bloom filter
-	bloomFilterHash := GenerateKeyHash(bloomFilterStateID)
-	bloomFilterBytes, found := s.Retrieve(bloomFilterHash, bloomFilterStateID)
+	hash := GenerateKeyHash(pastMapID)
+	pastBytes, found := s.Retrieve(hash, pastMapID)
 	if !found {
 		log.Println("Could not find bloom filter.")
 	}
-	bloomFilter := &bloomfilter.BloomFilter{}
-	err := protobuf.Decode(bloomFilterBytes, bloomFilter)
+	var decodedMap map[string]bool
+	d := gob.NewDecoder(bytes.NewReader(pastBytes))
+	// Decoding the serialized data
+	err := d.Decode(&decodedMap)
 	if err != nil {
-		log.Fatal("error decoding bloom filter")
+		panic(err)
 	}
-	return bloomFilter
+	return decodedMap
 }
 
 // Deletes the url pointed to by the crawl queue index pointer from the dht.
@@ -266,6 +265,6 @@ func (s Storage) DeleteCrawlQueueHead() error {
 	if !found {
 		log.Println("queue index not found.")
 	}
-	newURLHash := sha1.Sum(Itob(int(index) - 1))
+	newURLHash := sha512.Sum512(Itob(int(index) - 1))
 	return s.Delete(newURLHash, "crawlQueue")
 }

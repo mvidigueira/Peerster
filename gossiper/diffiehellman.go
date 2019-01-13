@@ -7,10 +7,11 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
-	"github.com/dedis/protobuf"
 	"log"
 	"math/big"
 	"time"
+
+	"github.com/dedis/protobuf"
 
 	"github.com/mvidigueira/Peerster/dht_util"
 	"github.com/mvidigueira/Peerster/diffie_hellman/diffiehellman"
@@ -37,10 +38,10 @@ func NewDiffieHellmanSession(key []byte, ExpirationDate time.Time) *DiffieHellma
 func (g *Gossiper) CleanOldDiffieHellmanSessionsRoutine() {
 	for {
 		select {
-		case <-time.After(time.Second * 10):
+		case <-time.After(time.Second * 5):
 			for key, v := range g.activeDiffieHellmans {
 				for _, session := range v {
-					if session.expired() && time.Now().After(session.LastTimeUsed.Add(time.Second*180)) {
+					if session.expired() && time.Now().After(session.LastTimeUsed.Add(time.Second*5)) {
 						delete(g.activeDiffieHellmans, key)
 					}
 				}
@@ -293,7 +294,7 @@ func (g *Gossiper) waitForAcknowledge(dest string, responseChan chan *dto.Diffie
 			return false, nil
 		}
 		return true, res
-	case <-time.After(time.Second * 10):
+	case <-time.After(time.Second * 15):
 		fmt.Println("Timeout, aborting.")
 		delete(g.diffieHellmanMap, dest)
 		return false, nil

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/dedis/protobuf"
 	"log"
 	"net"
 	"net/http"
@@ -17,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dedis/protobuf"
 
 	"github.com/gorilla/mux"
 
@@ -105,7 +106,7 @@ func main() {
 				panic(err)
 			}
 		}()
-		
+
 		log.Println("SERVING SEARCH")
 	}
 	<-stop

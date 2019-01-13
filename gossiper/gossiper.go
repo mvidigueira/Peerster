@@ -400,8 +400,16 @@ func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, c
 			go func() {
 				ch := g.decryptHyperlinkPackage(pap.GetSenderAddress(), packet.EncryptedWebCrawlerPacket)
 				hyperlinkPackage := <-ch
-				g.webCrawler.InChan <- &webcrawler.CrawlerPacket{
-					HyperlinkPackage: hyperlinkPackage,
+				for _, link := range hyperlinkPackage.Links {
+					err := g.dhtDb.UpdateCrawlQueue([]byte(link))
+					if err != nil {
+						log.Println("Error saving link")
+					}
+				}
+				if !g.webCrawler.IsCrawling {
+					g.webCrawler.OutChan <- &webcrawler.CrawlerPacket{
+						Done: &webcrawler.DoneCrawl{Delete: false},
+					}
 				}
 			}()
 

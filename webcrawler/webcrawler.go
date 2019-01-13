@@ -1,6 +1,8 @@
 package webcrawler
 
 import (
+	"bytes"
+	"encoding/gob"
 	"fmt"
 	"hash"
 	"hash/fnv"
@@ -11,9 +13,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/mvidigueira/Peerster/bloomfilter"
-	"github.com/mvidigueira/Peerster/dht_util"
 
 	"github.com/mvidigueira/Peerster/dht_util"
 
@@ -30,7 +29,7 @@ type Crawler struct {
 	domain     string
 	InChan     chan *CrawlerPacket
 	OutChan    chan *CrawlerPacket
-	leader     bool
+	Leader     bool
 	hasher     hash.Hash64
 	past       map[string]bool
 	NextCrawl  chan string
@@ -40,7 +39,6 @@ type Crawler struct {
 // PUBLIC API
 
 func New(leader bool) *Crawler {
-	bf := bloomfilter.New(3, 10e6)
 	return &Crawler{
 		crawlQueue: []string{},
 		mux:        &sync.Mutex{},
@@ -48,7 +46,7 @@ func New(leader bool) *Crawler {
 		domain:     "http://en.wikipedia.org",
 		InChan:     make(chan *CrawlerPacket),
 		OutChan:    make(chan *CrawlerPacket),
-		leader:     leader,
+		Leader:     leader,
 		hasher:     fnv.New64(),
 		past:       map[string]bool{},
 		NextCrawl:  make(chan string),
@@ -56,21 +54,10 @@ func New(leader bool) *Crawler {
 	}
 }
 
-func (wc *Crawler) Start() {
+func (wc *Crawler) Start(past map[string]bool) {
 
 	fmt.Println("Starting crawl...")
-	go wc.crawl()
-
-	/*if wc.leader {
-		wc.InChan <- &CrawlerPacket{
-			HyperlinkPackage: &HyperlinkPackage{
-				Links: []string{"/wiki/Outline_of_academic_disciplines"},
-			},
-		}
-	}*/
-	if bloomFilter != nil {
-		wc.bloomFilter = bloomFilter
-	}
+	wc.past = past
 	go wc.crawl()
 	//go wc.listenToQueueUpdate()
 }
@@ -79,25 +66,21 @@ func (wc *Crawler) Start() {
 
 // Starts crawl loop
 func (wc *Crawler) crawl() {
-	ticker := time.NewTicker(time.Second * 1)
-
 	go func() {
 		for {
 			select {
 			case nextPage := <-wc.NextCrawl:
+				time.Sleep(time.Second * 1)
 
 				wc.IsCrawling = true
 
 				page := wc.crawlUrl(nextPage)
 				if page == nil {
-					//wc.updateQueue([]string{nextPage})
+					wc.OutChan <- &CrawlerPacket{
+						Done: &DoneCrawl{Delete: true},
+					}
 					continue
 				}
-				/*wc.mux.Lock()
-				if wc.Crawled(nextPage) {
-					log.Fatal("ERROR CRAWLING")
-				}
-				wc.mux.Unlock()*/
 
 				fmt.Printf("Crawled %s, found %d hyperlinks and %d keywords.\n", nextPage, len(page.Hyperlinks), len(page.KeywordFrequencies))
 
@@ -150,10 +133,21 @@ func (wc *Crawler) crawl() {
 					}
 				}
 
-				// backup bloom filter
+				// backup past map
+				b := new(bytes.Buffer)
+				e := gob.NewEncoder(b)
+				err := e.Encode(wc.past)
+				if err != nil {
+					fmt.Println(err)
+					wc.OutChan <- &CrawlerPacket{
+						Done: &DoneCrawl{Delete: true},
+					}
+					continue
+				}
+
 				wc.OutChan <- &CrawlerPacket{
-					BloomFilterPackage: &BloomFilterPackage{
-						Filter: wc.bloomFilter,
+					PastMapPackage: &PastMapPackage{
+						Content: b.Bytes(),
 					},
 				}
 

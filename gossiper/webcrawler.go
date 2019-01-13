@@ -30,7 +30,7 @@ func (g *Gossiper) startCrawler() {
 
 func (g *Gossiper) initiateFreshCrawl() {
 	// Fresh start of crawl, initiate queue from start point if leader.
-	g.webCrawler.Start(nil)
+	g.webCrawler.Start(map[string]bool{})
 	if g.webCrawler.Leader {
 		err := g.dhtDb.UpdateCrawlQueue([]byte("/wiki/Swedish_Empire"))
 		if err != nil {
@@ -45,9 +45,9 @@ func (g *Gossiper) initiateFreshCrawl() {
 func (g *Gossiper) initiateAndRestoreCrawl() {
 
 	// Restore bloom filter
-	bloomFilter := g.dhtDb.GetBloomFilter()
+	past := g.dhtDb.GetPast()
 
-	g.webCrawler.Start(bloomFilter)
+	g.webCrawler.Start(past)
 
 	g.webCrawler.OutChan <- &webcrawler.CrawlerPacket{
 		Done: &webcrawler.DoneCrawl{Delete: false},
@@ -83,18 +83,27 @@ func (g *Gossiper) webCrawlerListenerRoutine() {
 				_, found := g.LookupValue(pageHash.Hash, dht.PageHashBucket)
 				packet.ResChan <- found
 			}(packet.PageHash)
-		case packet.BloomFilterPackage != nil:
-			g.dhtDb.SaveBloomFilter(packet.BloomFilterPackage.Filter)
+		case packet.PastMapPackage != nil:
+			g.dhtDb.SavePast(packet.PastMapPackage.Content)
 		case packet.Done != nil:
-			// Crawl of page done, get new url from db and feed it to crawler.
-			if packet.Done.Delete {
-				err := g.dhtDb.DeleteCrawlQueueHead()
-				if err != nil {
-					log.Fatal("Error, deleting crawl queue head.")
+			go func(done *webcrawler.DoneCrawl) {
+				// Crawl of page done, get new url from db and feed it to crawler.
+				if done.Delete {
+					err := g.dhtDb.DeleteCrawlQueueHead()
+					if err != nil {
+						fmt.Println("failed to delete head.")
+					}
 				}
-			}
-			head := g.dhtDb.CrawlQueueHead()
-			g.webCrawler.NextCrawl <- head
+				head, err := g.dhtDb.CrawlQueueHead()
+				if err != nil {
+					time.Sleep(time.Second * 2)
+					g.webCrawler.OutChan <- &webcrawler.CrawlerPacket{
+						Done: done,
+					}
+					return
+				}
+				g.webCrawler.NextCrawl <- head
+			}(packet.Done)
 		}
 	}
 }
@@ -412,9 +421,9 @@ func (g *Gossiper) getKey(dest string) chan []byte {
 			select {
 			case k := <-g.negotiateDiffieHellmanInitiator(dest):
 				resChan <- k
-			case <-time.After(time.Second * 5):
-				resChan <- []byte{}
-				log.Fatal("Failed to initiate diffie-hellman.2")
+			case <-time.After(time.Second * 30):
+				fmt.Println("Failed to initiate diffie-hellman.2")
+				g.getKey(dest)
 			}
 		} else if f {
 			resChan <- diffieSessions[len(diffieSessions)-1].Key
