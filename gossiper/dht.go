@@ -165,7 +165,7 @@ func (g *Gossiper) replyStore(msg *dht.Message) {
 			numberOfLinks := len(links)
 			rankInfo := &RankInfo{Url: url, Rank: InitialRank, NumberOfOutboundLinks: numberOfLinks}
 			for _, outLink := range links {
-				update := &RankUpdate{outLink, rankInfo, 0}
+				update := &RankUpdate{outLink, rankInfo}
 				g.receiveRankUpdate(update, true, true)
 			}
 		}()
@@ -375,19 +375,6 @@ func (g *Gossiper) DoSearch(query string) (rankedResults webcrawler.RankedResult
 	if len(tokens) < 0 {
 		return
 	}
-	var numberOfDocuments int //TODO: we should improve this estimate
-
-	g.dhtDb.Db.View(func(tx *bbolt.Tx) error {
-		b := tx.Bucket([]byte(dht.PageHashBucket))
-		stats := b.Stats()
-		numberOfDocuments = stats.KeyN
-		b = tx.Bucket([]byte(dht.PageRankBucket))
-		stats = b.Stats()
-		if stats.KeyN > numberOfDocuments {
-			numberOfDocuments = stats.KeyN
-		}
-		return nil
-	})
 
 	i := 0
 	var newResults *webcrawler.KeywordToURLMap
@@ -396,12 +383,17 @@ func (g *Gossiper) DoSearch(query string) (rankedResults webcrawler.RankedResult
 		if len(t) < webcrawler.MinWordLen {
 			continue
 		}
-		newResults := g.lookupWord(t)
+		newResults = g.lookupWord(t)
 		if newResults == nil {
 			log.Printf("TERM %s NOT FOUND \n", t)
-			return
+		}else{
+			break
 		}
 	}
+	if newResults == nil {
+		return
+	}
+	numberOfDocuments := g.GetDocumentEstimate()
 	results := webcrawler.NewSearchResults(newResults, numberOfDocuments)
 	sort.Sort(results)
 	for _, t := range tokens[i:] {

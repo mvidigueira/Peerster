@@ -61,7 +61,7 @@ type Gossiper struct {
 	dhtDb        *dht.Storage
 	dhtBootstrap string
 	webCrawler   *webcrawler.Crawler
-	rankerCache  *rankerCache
+	pRanker  *ranker
 }
 
 //NewGossiper creates a new gossiper
@@ -113,7 +113,7 @@ func NewGossiper(address, name string, UIport string, peers []string, simple boo
 		dhtBootstrap: dhtBootstrap,
 
 		webCrawler:  webcrawler.New(crawlLeader),
-		rankerCache: newRankerCache(),
+		pRanker: newRanker(),
 	}
 
 	g.bucketTable = newBucketTable(g.dhtMyID, g)

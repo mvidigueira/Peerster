@@ -84,21 +84,24 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt)
 
-	searchRouter := mux.NewRouter()
-	path = filepath.Join(usr.HomeDir, selfDir, "/search_frontend")
+	if *crawlLeader {
+		searchRouter := mux.NewRouter()
+		path = filepath.Join(usr.HomeDir, selfDir, "/search_frontend")
 
-	searchRouter.Handle("/", http.FileServer(http.Dir(path)))
-	searchRouter.Path("/search").Queries("query", "{query}").Methods("GET").HandlerFunc(searchHandler)
-	srv := &http.Server{
-		Handler:      searchRouter,
-		Addr:         "localhost:8080",
-		WriteTimeout: 10 * time.Second,
-		ReadTimeout:  10 * time.Second,
+		searchRouter.Handle("/", http.FileServer(http.Dir(path)))
+		searchRouter.Path("/search").Queries("query", "{query}").Methods("GET").HandlerFunc(searchHandler)
+		srv := &http.Server{
+			Handler:      searchRouter,
+			Addr:         ":8080",
+			WriteTimeout: 10 * time.Second,
+			ReadTimeout:  10 * time.Second,
+		}
+		go srv.ListenAndServe()
+		log.Println("SERVING SEARCH")
 	}
-	go srv.ListenAndServe()
-	log.Println("SERVING SEARCH")
 	<-stop
 	log.Printf("Page rank cache hit rate: %.2f\n", g.PageRankCacheHitRate())
+	g.GetDocumentEstimate()
 }
 
 func searchHandler(w http.ResponseWriter, r *http.Request) {

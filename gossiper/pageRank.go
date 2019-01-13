@@ -2,6 +2,7 @@ package gossiper
 
 import (
 	"fmt"
+	"github.com/axiomhq/hyperloglog"
 	"github.com/bluele/gcache"
 	"github.com/dedis/protobuf"
 	"github.com/mvidigueira/Peerster/dht"
@@ -18,12 +19,10 @@ http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.1.4205&rep=rep1&type=pd
 */
 
 const (
-	cacheSize     = 1000000
+	cacheSize     = 5000000
 	prEpsilon     = 0.03
 	dampingFactor = 0.85
 	InitialRank   = 1 - dampingFactor
-
-	epsilon = 0.001
 )
 
 /*
@@ -47,12 +46,12 @@ type ranker struct {
 	cache         gcache.Cache
 	hits          int
 	totalAccesses int
-	updateQueue   chan *UpdateToProcess
-	mux sync.Mutex
+	hll *hyperloglog.Sketch
+	hllMux sync.Mutex
+	mux           sync.Mutex
 }
 
 func (pRanker *ranker) cacheSet(key interface{}, value interface{}) {
-	//cache.cache.SetWithExpire(key, value, 60*time.Second)
 	err := pRanker.cache.Set(key, value)
 	if err != nil {
 		panic(err)
@@ -65,8 +64,8 @@ func (g *Gossiper) PageRankCacheHitRate() float64 {
 }
 
 func newRanker() (pRanker *ranker) {
-	gc := gcache.New(cacheSize).LRU().Build()
-	pRanker = &ranker{cache: gc, updateQueue: make(chan *UpdateToProcess)}
+	gc := gcache.New(cacheSize).ARC().Build()
+	pRanker = &ranker{cache: gc, hll: hyperloglog.New14()}
 	return
 }
 
@@ -79,9 +78,8 @@ type UpdateToProcess struct {
 //RankUpdate is generated when a node has updated a pagerank of a page
 //and needs to propagate it to the rest of the network
 type RankUpdate struct {
-	OutboundLink             string    //The link that the sender thinks should be affected
-	RankInfo                 *RankInfo //New info to consider
-	PreviouslyPropagatedRank float64
+	OutboundLink string    //The link that the sender thinks should be affected
+	RankInfo     *RankInfo //New info to consider
 }
 
 type RankInfo struct {
@@ -92,10 +90,35 @@ type RankInfo struct {
 
 //Recalculate the Rank of a page taking into account the new information
 func (g *Gossiper) receiveRankUpdate(update *RankUpdate, isLocal bool, isNew bool) {
-	//go func() {
-	//	g.pRanker.updateQueue <- &UpdateToProcess{Update: update, IsLocal: isLocal, IsNew: isNew}
-	//}()
+	g.pRanker.hllMux.Lock()
+	g.pRanker.hll.Insert([]byte(update.RankInfo.Url))
+	g.pRanker.hllMux.Unlock()
 	g.processRankUpdates(&UpdateToProcess{Update: update, IsLocal: isLocal, IsNew: isNew})
+}
+
+func (g *Gossiper) GetDocumentEstimate() int {
+	numberOfDocuments := 0
+	g.dhtDb.Db.View(func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte(dht.PageHashBucket))
+		stats := b.Stats()
+		numberOfDocuments = stats.KeyN
+		log.Printf("page hashes: %d\n", numberOfDocuments)
+		b = tx.Bucket([]byte(dht.PageRankBucket))
+		stats = b.Stats()
+		log.Printf("page ranks: %d\n", stats.KeyN)
+		if stats.KeyN > numberOfDocuments {
+			numberOfDocuments = stats.KeyN
+		}
+		return nil
+	})
+
+	hllEstimate := int(g.pRanker.hll.Estimate())
+	if hllEstimate > numberOfDocuments {
+		numberOfDocuments = hllEstimate
+	}
+	log.Printf("hll estimate: %d\n",hllEstimate)
+
+	return numberOfDocuments
 }
 
 func (g *Gossiper) processRankUpdates(toProcess *UpdateToProcess) {
@@ -138,15 +161,13 @@ func (g *Gossiper) processRankUpdates(toProcess *UpdateToProcess) {
 		linkId := dht_util.GenerateKeyHash(link)
 		linkInfo := g.getRankFromDatabase(linkId)
 		if linkInfo != nil {
-			prevRank := linkInfo.Rank
-			//update.PreviouslyPropagatedRank = prevRank
 			relerr := linkInfo.updatePageRankWithInfo(update, g)
 			//Check that the pagerank has not converged yet
 			if relerr > prEpsilon {
 				linkOutbounds := g.getOutboundLinksFromDb(id)
 				//Store and send updates
 				g.storeRankLocally(linkInfo)
-				update := &RankUpdate{"", linkInfo, prevRank}
+				update := &RankUpdate{"", linkInfo}
 				g.batchRankUpdates(linkOutbounds, update)
 			}
 		}
@@ -245,14 +266,6 @@ func (page *RankInfo) updatePageRankWithInfo(update *RankUpdate, g *Gossiper) (r
 	var newInfo *RankInfo = nil
 	if update != nil {
 		newInfo = update.RankInfo
-		updateUrlId := dht_util.GenerateKeyHash(newInfo.Url)
-		knownRank, _ := g.getRankLocally(updateUrlId)
-		if knownRank != nil && math.Abs(knownRank.Rank - update.PreviouslyPropagatedRank) < epsilon {
-			oldRank := page.Rank
-			page.Rank += dampingFactor * (newInfo.Rank - update.PreviouslyPropagatedRank)
-			log.Println("Pagerank short path")
-			return math.Abs(oldRank-page.Rank) / oldRank
-		}
 	}
 
 	citations := &webcrawler.Citations{}
