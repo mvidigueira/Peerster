@@ -95,7 +95,7 @@ func main() {
 		searchRouter.Path("/search").Queries("query", "{query}").Methods("GET").HandlerFunc(searchHandler)
 		srv := &http.Server{
 			Handler:      searchRouter,
-			Addr:         ":80",
+			Addr:         ":8080",
 			WriteTimeout: 10 * time.Second,
 			ReadTimeout:  10 * time.Second,
 		}

@@ -236,7 +236,7 @@ func (g *Gossiper) negotiateDiffieHellman(dest string, nodeID [dht_util.IDByteSi
 	}, dest)
 
 	// Wait for ack
-	ok, ack := g.waitForAcknowledge(dest, nodeID, rChannel)
+	ok, _ := g.waitForAcknowledge(dest, nodeID, rChannel)
 	if !ok {
 		fmt.Println("failed to get ack.")
 		return
@@ -247,7 +247,7 @@ func (g *Gossiper) negotiateDiffieHellman(dest string, nodeID [dht_util.IDByteSi
 
 	// Save symmetric key
 	g.activeDiffieHellmanMutex.Lock()
-	g.activeDiffieHellmans[nodeID] = append(g.activeDiffieHellmans[nodeID], NewDiffieHellmanSession(symmetricKey, ack.ExpirationDate))
+	//g.activeDiffieHellmans[nodeID] = append(g.activeDiffieHellmans[nodeID], NewDiffieHellmanSession(symmetricKey, ack.ExpirationDate))
 	g.activeDiffieHellmanMutex.Unlock()
 
 	fmt.Println(symmetricKey)

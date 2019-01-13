@@ -9,7 +9,6 @@ import (
 	"log"
 
 	"github.com/dedis/protobuf"
-	"log"
 
 	. "github.com/mvidigueira/Peerster/dht_util"
 	"github.com/mvidigueira/Peerster/webcrawler"

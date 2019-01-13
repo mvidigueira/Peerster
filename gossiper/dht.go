@@ -3,6 +3,7 @@ package gossiper
 import (
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/dedis/protobuf"
 
@@ -11,7 +12,6 @@ import (
 	"github.com/reiver/go-porterstemmer"
 	"go.etcd.io/bbolt"
 
-	"log"
 	"math/rand"
 	"sort"
 	"strings"

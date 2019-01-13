@@ -444,9 +444,13 @@ func (g *Gossiper) getKey(dest string, nodeID [dht_util.IDByteSize]byte) chan []
 						resChan <- nil
 					}
 					resChan <- k
+					g.negotiationMapMutex.Lock()
 					delete(g.negotiationMap, nodeID)
+					g.negotiationMapMutex.Unlock()
 				case <-time.After(time.Second * 5):
+					g.negotiationMapMutex.Lock()
 					delete(g.negotiationMap, nodeID)
+					g.negotiationMapMutex.Unlock()
 					fmt.Println("Failed to initiate diffie-hellman.2")
 					resChan <- nil
 				}
