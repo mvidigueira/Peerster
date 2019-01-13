@@ -2,10 +2,10 @@ package main
 
 import (
 	"flag"
-	bolt "go.etcd.io/bbolt"
 	"github.com/mvidigueira/Peerster/dht"
 	"github.com/mvidigueira/Peerster/dht_util"
 	"github.com/reiver/go-porterstemmer"
+	bolt "go.etcd.io/bbolt"
 	"log"
 )
 
@@ -24,7 +24,7 @@ func FindKeyword(name string, keyword string) {
 	})
 }
 
-func main(){
+func main() {
 	keyword := flag.String("keyword", "", "keyword to find")
 	db := flag.String("name", "", "name of DB")
 	flag.Parse()

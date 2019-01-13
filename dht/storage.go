@@ -100,9 +100,8 @@ func (s *Storage) BulkAddLinksForKeyword(urlMaps []*webcrawler.KeywordToURLMap) 
 		return err
 	})
 
-	log.Print(err)
-
 	if err != nil {
+		log.Print(err)
 		ok = false
 	}
 	return
