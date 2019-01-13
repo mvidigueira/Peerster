@@ -105,6 +105,9 @@ func (g *Gossiper) sendStore(ns *dht.NodeState, key dht_util.TypeID, data []byte
 func (g *Gossiper) sendEncryptedStore(ns *dht.NodeState, key dht_util.TypeID, data []byte, storeType string) (err error) {
 	ch := g.getKey(ns.Address)
 	k := <-ch
+	if len(k) == 0 {
+		return fmt.Errorf("Could not get key for %s\n", ns.Address)
+	}
 	aesEncrypter := aesencryptor.New(k)
 	cipherText := aesEncrypter.Encrypt(data)
 	msg := g.newDHTStore(key, cipherText, storeType, true)

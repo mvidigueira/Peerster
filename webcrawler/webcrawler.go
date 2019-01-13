@@ -65,9 +65,11 @@ func (wc *Crawler) Start() {
 
 // PRIVATE METHODS
 
+const politeTimeoutSeconds = 2
+
 // Starts crawl loop
 func (wc *Crawler) crawl() {
-	ticker := time.NewTicker(time.Second * 1)
+	ticker := time.NewTicker(time.Second * politeTimeoutSeconds)
 
 	go func() {
 		for {

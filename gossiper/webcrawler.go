@@ -101,7 +101,7 @@ func (g *Gossiper) batchSendURLS(owner *dht.NodeState, hyperlinks []string) {
 			}
 			packetBytes, err := protobuf.Encode(links)
 			if err != nil {
-				log.Fatal()
+				panic(err)
 			}
 			aesEncrypter := aesencryptor.New(key)
 			cipherText := aesEncrypter.Encrypt(packetBytes)
@@ -361,7 +361,7 @@ func (g *Gossiper) getKey(dest string) chan []byte {
 				resChan <- k
 			case <-time.After(time.Second * 5):
 				resChan <- []byte{}
-				log.Fatal("Failed to initiate diffie-hellman.2")
+				log.Println("Failed to initiate diffie-hellman.2")
 			}
 		} else if f {
 			resChan <- diffieSessions[len(diffieSessions)-1].Key
