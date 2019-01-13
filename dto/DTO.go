@@ -228,13 +228,8 @@ type GossipPacket struct {
 	DHTMessage                *dht.Message
 	HyperlinkMessage          *webcrawler.HyperlinkPackage
 	EncryptedWebCrawlerPacket *webcrawler.EncryptedCrawlerPacket
-	InvalidateSymmetricKeys   *InvalidateSymmetricKeys
 
 	DiffieHellman *DiffieHellman
-}
-
-type InvalidateSymmetricKeys struct {
-	Origin [dht_util.IDByteSize]byte
 }
 
 //GetUnderlyingType - returns the underlying type of the gossip packet, or the empty string in case of no subtype
@@ -267,8 +262,6 @@ func (g *GossipPacket) GetUnderlyingType() (subtype string) {
 		subtype = "encryptedhyperlinkmessage"
 	} else if g.DiffieHellman != nil {
 		subtype = "diffiehellman"
-	} else if g.InvalidateSymmetricKeys != nil {
-		subtype = "invalidateKeys"
 	} else {
 		subtype = ""
 	}
@@ -942,4 +935,5 @@ type DiffieHellman struct {
 	ExpirationDate  time.Time
 	NodeID          [dht_util.IDByteSize]byte
 	Init            bool
+	ID              [dht_util.IDByteSize]byte
 }

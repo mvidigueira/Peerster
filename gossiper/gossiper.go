@@ -6,12 +6,8 @@ import (
 	"log"
 	"math/rand"
 	"net"
-	"os"
-	"os/signal"
-	"runtime"
 	"strconv"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/dedis/protobuf"
@@ -71,9 +67,11 @@ type Gossiper struct {
 	webCrawler               *webcrawler.Crawler
 	pRanker                  *ranker
 	diffieHellmanMapMutex    *sync.Mutex
-	diffieHellmanMap         map[[dht_util.IDByteSize]byte](chan *dto.DiffieHellman)
+	diffieHellmanMap         map[[dht_util.IDByteSize]byte][]*DiffieHellmanNegotiationSession
 	activeDiffieHellmanMutex *sync.Mutex
 	activeDiffieHellmans     map[[dht_util.IDByteSize]byte][]*DiffieHellmanSession
+	negotiationMapMutex      *sync.Mutex
+	negotiationMap           map[[dht_util.IDByteSize]byte]chan [dht_util.IDByteSize]byte
 	encryptDHTOperations     bool
 	privateKey               *ecdsa.PrivateKey
 }
@@ -131,11 +129,13 @@ func NewGossiper(address, name string, UIport string, peers []string, simple boo
 		webCrawler:               webcrawler.New(crawlLeader),
 		pRanker:                  newRanker(),
 		diffieHellmanMapMutex:    new(sync.Mutex),
-		diffieHellmanMap:         map[[dht_util.IDByteSize]byte](chan *dto.DiffieHellman){},
+		diffieHellmanMap:         map[[dht_util.IDByteSize]byte][]*DiffieHellmanNegotiationSession{},
 		activeDiffieHellmanMutex: new(sync.Mutex),
 		activeDiffieHellmans:     map[[dht_util.IDByteSize]byte]([]*DiffieHellmanSession){},
 		encryptDHTOperations:     encryptDHTOperations,
 		privateKey:               privateKey,
+		negotiationMap:           map[[dht_util.IDByteSize]byte](chan [dht_util.IDByteSize]byte){},
+		negotiationMapMutex:      new(sync.Mutex),
 	}
 
 	g.bucketTable = newBucketTable(g.dhtMyID, g)
@@ -203,32 +203,6 @@ func (g *Gossiper) Start() {
 
 	go g.webCrawlerListenerRoutine()
 	g.startCrawler()
-
-	// Catch ctrl-c events. Before shutdown we want to broadcast to all nodes that we are leaving
-	// In order for them to invalidate all symmetric keys involved with this node.
-	term := make(chan os.Signal)
-	signal.Notify(term, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		select {
-		case <-term:
-			// Send invalidation message to all nodes which we currently share keys with
-			for k, _ := range g.activeDiffieHellmans {
-				closest := g.LookupNodes(k)
-
-				g.sendUDP(&dto.GossipPacket{
-					InvalidateSymmetricKeys: &dto.InvalidateSymmetricKeys{
-						Origin: g.dhtMyID,
-					},
-				}, closest[0].Address)
-			}
-			time.Sleep(time.Second * 1)
-
-			// Cleanup GC
-			runtime.GC()
-
-			os.Exit(1)
-		}
-	}()
 
 	g.receiveClientUDP(cUI, cUIPM, cFileShare, cFileDL, cFileSearch, cCliDHT)
 
@@ -436,15 +410,17 @@ func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, c
 			go func() {
 				ch := g.decryptHyperlinkPackage(pap.GetSenderAddress(), packet.EncryptedWebCrawlerPacket)
 				hyperlinkPackage := <-ch
-				for _, link := range hyperlinkPackage.Links {
-					err := g.dhtDb.UpdateCrawlQueue([]byte(link))
-					if err != nil {
-						log.Println("Error saving link")
+				if hyperlinkPackage != nil {
+					for _, link := range hyperlinkPackage.Links {
+						err := g.dhtDb.UpdateCrawlQueue([]byte(link))
+						if err != nil {
+							log.Println("Error saving link")
+						}
 					}
-				}
-				if !g.webCrawler.IsCrawling {
-					g.webCrawler.OutChan <- &webcrawler.CrawlerPacket{
-						Done: &webcrawler.DoneCrawl{Delete: false},
+					if !g.webCrawler.IsCrawling {
+						g.webCrawler.OutChan <- &webcrawler.CrawlerPacket{
+							Done: &webcrawler.DoneCrawl{Delete: false},
+						}
 					}
 				}
 			}()
@@ -454,18 +430,6 @@ func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, c
 				log.Println("Running on 'simple' mode. Ignoring dhtmessage message from " + senderAddress + "...")
 			} else {
 				cDiffie <- pap
-			}
-		case "invalidateKeys":
-			if g.UseSimple {
-				log.Println("Running on 'simple' mode. Ignoring dhtmessage message from " + senderAddress + "...")
-			} else {
-				g.activeDiffieHellmanMutex.Lock()
-				delete(g.activeDiffieHellmans, pap.Packet.InvalidateSymmetricKeys.Origin)
-				g.activeDiffieHellmanMutex.Unlock()
-
-				g.diffieHellmanMapMutex.Lock()
-				delete(g.diffieHellmanMap, pap.Packet.InvalidateSymmetricKeys.Origin)
-				g.diffieHellmanMapMutex.Unlock()
 			}
 		default:
 			log.Println("Unrecognized message type. Ignoring message from " + senderAddress + "...")

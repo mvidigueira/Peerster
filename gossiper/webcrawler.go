@@ -17,6 +17,8 @@ import (
 
 func (g *Gossiper) startCrawler() {
 
+	fmt.Println("START CRAWL")
+
 	queue, ok := g.dhtDb.CrawlQueueHeadPointer()
 	if !ok {
 		log.Fatal("Queue index not found.")
@@ -43,7 +45,7 @@ func (g *Gossiper) initiateFreshCrawl() {
 }
 
 func (g *Gossiper) initiateAndRestoreCrawl() {
-
+	fmt.Println("RESTORING CRAWL")
 	// Restore bloom filter
 	past := g.dhtDb.GetPast()
 
@@ -410,38 +412,54 @@ func (g *Gossiper) savePageHashInDHT(pageHash *webcrawler.PageHashPackage) {
 func (g *Gossiper) getKey(dest string, nodeID [dht_util.IDByteSize]byte) chan []byte {
 	resChan := make(chan []byte)
 	go func() {
+		// Get currently active session if any
 		g.activeDiffieHellmanMutex.Lock()
 		diffieSessions, f := g.activeDiffieHellmans[nodeID]
 		g.activeDiffieHellmanMutex.Unlock()
 
-		g.diffieHellmanMapMutex.Lock()
-		_, activeNegotiation := g.diffieHellmanMap[nodeID]
-		g.diffieHellmanMapMutex.Unlock()
+		// Check if all current sessions are expired
 		var allSessionsExpired = true
 		for _, session := range diffieSessions {
 			allSessionsExpired = session.expired()
 		}
 
-		if !activeNegotiation && allSessionsExpired {
-			// Start negotiation
-			select {
-			case k := <-g.negotiateDiffieHellmanInitiator(dest, nodeID):
-				if k == nil {
-					delete(g.diffieHellmanMap, nodeID)
-					fmt.Println("Failed to initiate diffie-hellman. Retrying...")
-					resChan <- nil
-				}
-				resChan <- k
-				delete(g.diffieHellmanMap, nodeID)
-			case <-time.After(time.Second * 30):
-				delete(g.diffieHellmanMap, nodeID)
-				fmt.Println("Failed to initiate diffie-hellman.2")
-				resChan <- nil
-			}
-		} else if f {
+		if f && len(diffieSessions) > 0 && !allSessionsExpired {
+			// We have a valid session
 			resChan <- diffieSessions[len(diffieSessions)-1].Key
 		} else {
-			resChan <- nil
+			// We need to negotiate new session
+			g.negotiationMapMutex.Lock()
+			// We only want 1 negotiation at a time
+			ch, f := g.negotiationMap[nodeID]
+			if !f {
+				negotiationChannel := make(chan [dht_util.IDByteSize]byte)
+				g.negotiationMap[nodeID] = negotiationChannel
+				g.negotiationMapMutex.Unlock()
+
+				// Start negotiation
+				select {
+				case k := <-g.negotiateDiffieHellmanInitiator(dest, nodeID):
+					if k == nil {
+						fmt.Println("Failed to initiate diffie-hellman. Retrying...")
+						resChan <- nil
+					}
+					resChan <- k
+					delete(g.negotiationMap, nodeID)
+				case <-time.After(time.Second * 5):
+					delete(g.negotiationMap, nodeID)
+					fmt.Println("Failed to initiate diffie-hellman.2")
+					resChan <- nil
+				}
+			} else {
+				// we need a new key but a negotiation is already active -> subscribe to the channel
+				g.negotiationMapMutex.Unlock()
+				select {
+				case newKey := <-ch:
+					resChan <- newKey[:]
+				case <-time.After(time.Second * 30):
+					resChan <- nil
+				}
+			}
 		}
 	}()
 	return resChan
@@ -451,22 +469,26 @@ func (g *Gossiper) decryptHyperlinkPackage(sender string, encryptedPacket *webcr
 	callBackChan := make(chan *webcrawler.HyperlinkPackage)
 	go func() {
 		ch := g.getKey(sender, encryptedPacket.Origin)
-		key := <-ch
-		if key == nil {
-			return
-		}
-		aesEncrypter := aesencryptor.New(key)
-		cipher, err := aesEncrypter.Decrypt(encryptedPacket.Packet)
-		if err != nil {
-			fmt.Println("failed to encrypt hyperlink msg.")
-		}
+		select {
+		case key := <-ch:
+			if key == nil {
+				return
+			}
+			aesEncrypter := aesencryptor.New(key)
+			cipher, err := aesEncrypter.Decrypt(encryptedPacket.Packet)
+			if err != nil {
+				fmt.Println("failed to encrypt hyperlink msg.")
+			}
 
-		hyperlinkPackage := &webcrawler.HyperlinkPackage{}
-		err = protobuf.Decode(cipher, hyperlinkPackage)
-		if err != nil {
-			log.Fatal("error decrypting crawler packet")
+			hyperlinkPackage := &webcrawler.HyperlinkPackage{}
+			err = protobuf.Decode(cipher, hyperlinkPackage)
+			if err != nil {
+				log.Fatal("error decrypting crawler packet")
+			}
+			callBackChan <- hyperlinkPackage
+		case <-time.After(time.Second * 5):
+			callBackChan <- nil
 		}
-		callBackChan <- hyperlinkPackage
 	}()
 
 	return callBackChan

@@ -1,6 +1,7 @@
 package gossiper
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/dedis/protobuf"
@@ -107,17 +108,22 @@ func (g *Gossiper) sendStore(ns *dht.NodeState, key dht_util.TypeID, data []byte
 // sendEncryptedStore - sends a RPC to node 'ns' for storing the KV pair ('key' - 'data')
 func (g *Gossiper) sendEncryptedStore(ns *dht.NodeState, key dht_util.TypeID, data []byte, storeType string) (err error) {
 	ch := g.getKey(ns.Address, ns.NodeID)
-	k := <-ch
-	if k == nil {
-		fmt.Println("failed to get key, sending unencrypted...")
-		g.sendStore(ns, key, data, storeType)
-		return
+	select {
+	case k := <-ch:
+		if k == nil {
+			fmt.Println("failed to get key, sending unencrypted...")
+			g.sendStore(ns, key, data, storeType)
+			return
+		}
+		aesEncrypter := aesencryptor.New(k)
+		cipherText := aesEncrypter.Encrypt(data)
+		msg := g.newDHTStore(key, cipherText, storeType, true)
+		packet := &dto.GossipPacket{DHTMessage: msg}
+		g.sendUDP(packet, ns.Address)
+	case <-time.After(time.Second * 5):
+		return errors.New("Failed to get key")
 	}
-	aesEncrypter := aesencryptor.New(k)
-	cipherText := aesEncrypter.Encrypt(data)
-	msg := g.newDHTStore(key, cipherText, storeType, true)
-	packet := &dto.GossipPacket{DHTMessage: msg}
-	g.sendUDP(packet, ns.Address)
+
 	return nil
 }
 
@@ -281,14 +287,19 @@ func (g *Gossiper) sendLookupKey(ns *dht.NodeState, key dht_util.TypeID, dbBucke
 	msg := g.newDHTValueLookup(key, dbBucket, encrypt)
 	if g.encryptDHTOperations {
 		ch := g.getKey(ns.Address, ns.NodeID)
-		k := <-ch
-		if k == nil {
+		select {
+		case k := <-ch:
+			if k == nil {
+				fmt.Println("failed to get key, falling back on default.")
+				msg.ValueLookup.Encrypted = false
+			} else {
+				aesEncrypter := aesencryptor.New(k)
+				cipherText := aesEncrypter.Encrypt(msg.ValueLookup.Key[:])
+				msg.ValueLookup.EncryptedKey = cipherText
+			}
+		case <-time.After(time.Second * 5):
 			fmt.Println("failed to get key, falling back on default.")
 			msg.ValueLookup.Encrypted = false
-		} else {
-			aesEncrypter := aesencryptor.New(k)
-			cipherText := aesEncrypter.Encrypt(msg.ValueLookup.Key[:])
-			msg.ValueLookup.EncryptedKey = cipherText
 		}
 	}
 	rpcNum := msg.Nonce
@@ -430,7 +441,7 @@ func (g *Gossiper) dhtMessageListenRoutine(cDHTMessage chan *dto.PacketAddressPa
 
 func (g *Gossiper) dhtJoin(bootstrap string) {
 	ns := &dht.NodeState{Address: bootstrap}
-	fmt.Printf("Attempting to join dht network using %x as bootstrap.\n", bootstrap)
+	fmt.Printf("Attempting to join dht network using %s as bootstrap.\n", bootstrap)
 	if !g.sendPing(ns) {
 		fmt.Printf("Join failed.\n")
 	}
