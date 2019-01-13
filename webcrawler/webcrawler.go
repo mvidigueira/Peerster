@@ -2,7 +2,6 @@ package webcrawler
 
 import (
 	"fmt"
-	"github.com/mvidigueira/Peerster/dht_util"
 	"hash"
 	"hash/fnv"
 	"log"
@@ -13,39 +12,44 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mvidigueira/Peerster/dht_util"
+
 	"github.com/PuerkitoBio/goquery"
 	"github.com/bbalet/stopwords"
-	"github.com/mvidigueira/Peerster/bloomfilter"
 	"github.com/reiver/go-porterstemmer"
 )
 
 type Crawler struct {
-	mux         *sync.Mutex
-	crawlQueue  []string
-	domain      string
-	InChan      chan *CrawlerPacket
-	OutChan     chan *CrawlerPacket
-	leader      bool
-	bloomFilter *bloomfilter.BloomFilter
-	hasher      hash.Hash64
+	mux  *sync.Mutex
+	mux1 *sync.Mutex
+
+	crawlQueue []string
+	domain     string
+	InChan     chan *CrawlerPacket
+	OutChan    chan *CrawlerPacket
+	leader     bool
+	hasher     hash.Hash64
+	past       map[string]bool
 }
 
 // PUBLIC API
 
 func New(leader bool) *Crawler {
 	return &Crawler{
-		crawlQueue:  []string{},
-		mux:         &sync.Mutex{},
-		domain:      "http://en.wikipedia.org",
-		InChan:      make(chan *CrawlerPacket),
-		OutChan:     make(chan *CrawlerPacket),
-		leader:      leader,
-		bloomFilter: bloomfilter.New(3, 10e6),
-		hasher:      fnv.New64(),
+		crawlQueue: []string{},
+		mux:        &sync.Mutex{},
+		mux1:       &sync.Mutex{},
+		domain:     "http://en.wikipedia.org",
+		InChan:     make(chan *CrawlerPacket),
+		OutChan:    make(chan *CrawlerPacket),
+		leader:     leader,
+		hasher:     fnv.New64(),
+		past:       map[string]bool{},
 	}
 }
 
 func (wc *Crawler) Start() {
+
 	fmt.Println("Starting crawl...")
 	go wc.crawl()
 	go wc.listenToQueueUpdate()
@@ -77,9 +81,14 @@ func (wc *Crawler) crawl() {
 
 				page := wc.crawlUrl(nextPage)
 				if page == nil {
-					wc.updateQueue([]string{nextPage})
+					//wc.updateQueue([]string{nextPage})
 					continue
 				}
+				/*wc.mux.Lock()
+				if wc.Crawled(nextPage) {
+					log.Fatal("ERROR CRAWLING")
+				}
+				wc.mux.Unlock()*/
 
 
 				fmt.Printf("Crawled %s, found %d hyperlinks and %d keywords.\n", nextPage, len(page.Hyperlinks), len(page.KeywordFrequencies))
@@ -104,7 +113,7 @@ func (wc *Crawler) crawl() {
 				//Store the outbound links of this page
 				wc.OutChan <- &CrawlerPacket{
 					OutBoundLinks: &OutBoundLinksPackage{
-						Url: nextPage,
+						Url:           nextPage,
 						OutBoundLinks: page.Hyperlinks,
 					},
 				}
@@ -122,8 +131,11 @@ func (wc *Crawler) crawl() {
 				// Filter out urls that already has been crawler by this crawler
 				filteredHyperLinks := make([]string, 0, len(page.Hyperlinks))
 				for _, hyperlink := range page.Hyperlinks {
-					if !wc.bloomFilter.IsSet([]byte(hyperlink)) {
+					if !wc.Crawled(hyperlink) {
 						filteredHyperLinks = append(filteredHyperLinks, hyperlink)
+						wc.mux1.Lock()
+						wc.past[hyperlink] = true
+						wc.mux1.Unlock()
 					}
 				}
 
@@ -252,7 +264,7 @@ func (wc *Crawler) extractText(text string) string {
 
 // Removes unwanted parts of wikipedia HTML pages
 func (wc *Crawler) cleanPage(doc goquery.Document) goquery.Document {
-	toRemove := []string{"script", "head", "style","img","span","div[id=mw-navigation]", "div[id=toc]", "div[id=Further_reading]",  "div[id=External_links]", "div[id=catlinks]", "div[id=footer]", "div[class=nowraplinks]"}
+	toRemove := []string{"script", "head", "style", "img", "span", "div[id=mw-navigation]", "div[id=toc]", "div[id=Further_reading]", "div[id=External_links]", "div[id=catlinks]", "div[id=footer]", "div[class=nowraplinks]"}
 	for _, element := range toRemove {
 		doc.Find(element).Each(func(i int, el *goquery.Selection) {
 			el.Remove()
@@ -309,16 +321,6 @@ func (wc *Crawler) keywordFrequency(keywords []string) map[string]int {
 	return frequencies
 }
 
-// creates a 20 byte long hash
-/*func (wc *Crawler) fastHash(id string) dht.TypeID {
-	wc.hasher.Reset()
-	wc.hasher.Write([]byte(id))
-	hash := wc.hasher.Sum64()
-	var b [dht.IDByteSize]byte
-	binary.LittleEndian.PutUint64(b[:], hash)
-	return b
-}*/
-
 // Removes first element from crawler queue
 func (wc *Crawler) popQueue() string {
 	wc.mux.Lock()
@@ -333,9 +335,19 @@ func (wc *Crawler) updateQueue(hyperlinks []string) {
 	wc.mux.Lock()
 	defer wc.mux.Unlock()
 	for _, hyperlink := range hyperlinks {
-		if wc.bloomFilter.IsSet([]byte(hyperlink)) {
+		/*if wc.bloomFilter.Test([]byte(hyperlink)) {
+			continue
+		}*/
+		if wc.Crawled(hyperlink) {
 			continue
 		}
 		wc.crawlQueue = append(wc.crawlQueue, hyperlink)
 	}
+}
+
+func (wc *Crawler) Crawled(url string) bool {
+	wc.mux1.Lock()
+	defer wc.mux1.Unlock()
+	_, f := wc.past[url]
+	return f
 }

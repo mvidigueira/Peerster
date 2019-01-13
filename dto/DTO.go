@@ -4,11 +4,12 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
-	"github.com/mvidigueira/Peerster/dht_util"
 	"log"
 	"net"
 	"protobuf"
 	"time"
+
+	"github.com/mvidigueira/Peerster/dht_util"
 
 	"github.com/mvidigueira/Peerster/dht"
 	"github.com/mvidigueira/Peerster/webcrawler"
@@ -213,18 +214,21 @@ func (t *TxPublish) Hash() (out [32]byte) {
 
 //GossipPacket - protocol structure to be serialized and sent between peers
 type GossipPacket struct {
-	Simple           *SimpleMessage
-	Rumor            *RumorMessage
-	Status           *StatusPacket
-	Private          *PrivateMessage
-	DataRequest      *DataRequest
-	DataReply        *DataReply
-	SearchRequest    *SearchRequest
-	SearchReply      *SearchReply
-	TxPublish        *TxPublish
-	BlockPublish     *BlockPublish
-	DHTMessage       *dht.Message
-	HyperlinkMessage *webcrawler.HyperlinkPackage
+	Simple                    *SimpleMessage
+	Rumor                     *RumorMessage
+	Status                    *StatusPacket
+	Private                   *PrivateMessage
+	DataRequest               *DataRequest
+	DataReply                 *DataReply
+	SearchRequest             *SearchRequest
+	SearchReply               *SearchReply
+	TxPublish                 *TxPublish
+	BlockPublish              *BlockPublish
+	DHTMessage                *dht.Message
+	HyperlinkMessage          *webcrawler.HyperlinkPackage
+	EncryptedWebCrawlerPacket *webcrawler.EncryptedCrawlerPacket
+
+	DiffieHellman *DiffieHellman
 }
 
 //GetUnderlyingType - returns the underlying type of the gossip packet, or the empty string in case of no subtype
@@ -253,6 +257,10 @@ func (g *GossipPacket) GetUnderlyingType() (subtype string) {
 		subtype = "dhtmessage"
 	} else if g.HyperlinkMessage != nil {
 		subtype = "hyperlinkmessage"
+	} else if g.EncryptedWebCrawlerPacket != nil {
+		subtype = "encryptedhyperlinkmessage"
+	} else if g.DiffieHellman != nil {
+		subtype = "diffiehellman"
 	} else {
 		subtype = ""
 	}
@@ -298,6 +306,8 @@ func (g *GossipPacket) GetOrigin() (origin string) {
 	case "dhtmessage":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract origin name from a MESSAGE message"}
 		LogError(err)
+	case "diffiehellman":
+		origin = g.DiffieHellman.Origin
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
 		LogError(err)
@@ -416,6 +426,8 @@ func (g *GossipPacket) GetHopLimit() (limit uint32) {
 	case "dhtmessage":
 		err := &GossipPacketError{When: time.Now(), What: "Can't extract hop-limit from a MESSAGE message"}
 		LogError(err)
+	case "diffiehellman":
+		limit = g.DiffieHellman.HopLimit
 	default:
 		err := &GossipPacketError{When: time.Now(), What: "Gossip packet has no non-nil sub struct"}
 		LogError(err)
@@ -907,4 +919,17 @@ func SendGossipPacket(packet *GossipPacket, addr string, conn *net.UDPConn) {
 	packetBytes, err := protobuf.Encode(packet)
 	LogError(err)
 	conn.WriteToUDP(packetBytes, udpAddr)
+}
+
+type DiffieHellman struct {
+	Origin          string
+	Destination     string
+	HopLimit        uint32
+	P               string
+	G               string
+	DiffiePublicKey []byte
+	EcdsaPublicKey  []byte
+	R               []byte
+	S               []byte
+	ExpirationDate  time.Time
 }

@@ -1,14 +1,16 @@
 package gossiper
 
 import (
+	"crypto/ecdsa"
 	"fmt"
-	"github.com/mvidigueira/Peerster/dht_util"
 	"log"
 	"math/rand"
 	"net"
 	"protobuf"
 	"strconv"
 	"time"
+
+	"github.com/mvidigueira/Peerster/dht_util"
 
 	"github.com/mvidigueira/Peerster/dht"
 	"github.com/mvidigueira/Peerster/dto"
@@ -62,10 +64,14 @@ type Gossiper struct {
 	dhtBootstrap string
 	webCrawler   *webcrawler.Crawler
 	pRanker  *ranker
+	diffieHellmanMap     map[string](chan *dto.DiffieHellman)
+	activeDiffieHellmans map[string][]*DiffieHellmanSession
+	encryptDHTOperations bool
+	privateKey           *ecdsa.PrivateKey
 }
 
 //NewGossiper creates a new gossiper
-func NewGossiper(address, name string, UIport string, peers []string, simple bool, rtimeout int, dhtBootstrap string, crawlLeader bool) *Gossiper {
+func NewGossiper(address, name string, UIport string, peers []string, simple bool, rtimeout int, dhtBootstrap string, crawlLeader, encryptDHTOperations bool) *Gossiper {
 	gossipAddr, err := net.ResolveUDPAddr("udp4", address)
 	dto.LogError(err)
 	clientAddr, err := net.ResolveUDPAddr("udp4", "localhost:"+UIport)
@@ -74,6 +80,8 @@ func NewGossiper(address, name string, UIport string, peers []string, simple boo
 	dto.LogError(err)
 	udpConnClient, err := net.ListenUDP("udp4", clientAddr)
 	dto.LogError(err)
+
+	privateKey, nodeId := dht.InitialRandNodeID()
 
 	g := &Gossiper{
 		address:   address,
@@ -108,12 +116,16 @@ func NewGossiper(address, name string, UIport string, peers []string, simple boo
 		blockchainLedger: NewBlockchainLedger(),
 
 		dhtDb:        dht.NewStorage(name),
-		dhtMyID:      dht.InitialRandNodeID(),
+		dhtMyID:      nodeId,
 		dhtChanMap:   dht.NewChanMap(),
 		dhtBootstrap: dhtBootstrap,
 
 		webCrawler:  webcrawler.New(crawlLeader),
 		pRanker: newRanker(),
+		diffieHellmanMap:     map[string](chan *dto.DiffieHellman){},
+		activeDiffieHellmans: map[string]([]*DiffieHellmanSession){},
+		encryptDHTOperations: encryptDHTOperations,
+		privateKey:           privateKey,
 	}
 
 	g.bucketTable = newBucketTable(g.dhtMyID, g)
@@ -150,7 +162,11 @@ func (g *Gossiper) Start() {
 	cDHT := make(chan *dto.PacketAddressPair)
 	go g.dhtMessageListenRoutine(cDHT)
 
-	go g.receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, cDataReply, cSearcRequest, cSearchReply, cFileNaming, cBlocks, cDHT)
+	cDiffieHellman := make(chan *dto.PacketAddressPair)
+	go g.diffieListenRoutine(cDiffieHellman)
+	go g.CleanOldDiffieHellmanSessionsRoutine()
+
+	go g.receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, cDataReply, cSearcRequest, cSearchReply, cFileNaming, cBlocks, cDHT, cDiffieHellman)
 	//go g.antiEntropy()
 
 	//go g.periodicRouteRumor() //DSDV
@@ -285,7 +301,7 @@ func (g *Gossiper) receiveClientUDP(cRumoring, cPMing chan *dto.PacketAddressPai
 
 //receiveExternalUDP - receives gossip packets from PEERS and forwards them to the appropriate channel
 //among those provided, depending on whether they are rumor, simple or status packets
-func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, cDataReply, cSearcRequest, cSearchReply, cFileNaming, cBlocks, cDHT chan *dto.PacketAddressPair) {
+func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, cDataReply, cSearcRequest, cSearchReply, cFileNaming, cBlocks, cDHT, cDiffie chan *dto.PacketAddressPair) {
 	for {
 		packet := &dto.GossipPacket{}
 		packetBytes := make([]byte, packetSize)
@@ -300,7 +316,6 @@ func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, c
 		protobuf.Decode(packetBytes, packet)
 		senderAddress := udpAddr.IP.String() + ":" + strconv.Itoa(udpAddr.Port)
 		pap := &dto.PacketAddressPair{Packet: packet, SenderAddress: senderAddress}
-
 		switch packet.GetUnderlyingType() {
 		case "status":
 			if g.UseSimple {
@@ -371,6 +386,21 @@ func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, c
 		case "hyperlinkmessage":
 			g.webCrawler.InChan <- &webcrawler.CrawlerPacket{
 				HyperlinkPackage: packet.HyperlinkMessage,
+			}
+		case "encryptedhyperlinkmessage":
+			go func() {
+				ch := g.decryptHyperlinkPackage(pap.GetSenderAddress(), packet.EncryptedWebCrawlerPacket)
+				hyperlinkPackage := <-ch
+				g.webCrawler.InChan <- &webcrawler.CrawlerPacket{
+					HyperlinkPackage: hyperlinkPackage,
+				}
+			}()
+
+		case "diffiehellman":
+			if g.UseSimple {
+				log.Println("Running on 'simple' mode. Ignoring dhtmessage message from " + senderAddress + "...")
+			} else {
+				cDiffie <- pap
 			}
 		default:
 			log.Println("Unrecognized message type. Ignoring message from " + senderAddress + "...")

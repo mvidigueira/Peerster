@@ -1,10 +1,11 @@
 package dht
 
 import (
+	"protobuf"
+
+	. "github.com/mvidigueira/Peerster/dht_util"
 	"github.com/mvidigueira/Peerster/webcrawler"
 	bolt "go.etcd.io/bbolt"
-	"protobuf"
-	. "github.com/mvidigueira/Peerster/dht_util"
 )
 
 const (
@@ -25,7 +26,7 @@ type Storage struct {
 // The definiton of KeywordToURLMap will move to the webcrawler package but it is in a seperate branch at the moment. I will move this when
 // I merge the two branches.
 
-func NewStorage(gossiperName string) (s *Storage){
+func NewStorage(gossiperName string) (s *Storage) {
 	db, err := bolt.Open(gossiperName+"_index.db", 0666, nil)
 	buckets := []string{KeywordsBucket, LinksBucket, PageHashBucket, CitationsBucket, PageRankBucket}
 	if err != nil {
@@ -49,7 +50,7 @@ func (s *Storage) Retrieve(key TypeID, bucket string) (data []byte, ok bool) {
 	s.Db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucket))
 		dbData := b.Get(key[:])
-		if dbData == nil{
+		if dbData == nil {
 			ok = false
 			return nil
 		}
@@ -96,6 +97,7 @@ func (s *Storage) AddLinksForKeyword(key string, newKeywordToUrlMap webcrawler.K
 }
 
 func (s *Storage) BulkAddLinksForKeyword(urlMaps []*webcrawler.KeywordToURLMap) (ok bool) {
+
 	ok = true
 
 	var err error

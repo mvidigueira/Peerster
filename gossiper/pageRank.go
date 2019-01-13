@@ -249,8 +249,7 @@ func (g *Gossiper) batchRankUpdates(urlInfo *webcrawler.OutBoundLinksPackage, pa
 			if err != nil {
 				panic(err)
 			}
-			//TODO: this should probably be changed when Jakob changes the size of the key?
-			err = g.sendStore(&dest, [20]byte{}, packetBytes, dht.PageRankBucket)
+			err = g.sendStore(&dest, [dht_util.IDByteSize]byte{}, packetBytes, dht.PageRankBucket)
 			if err != nil {
 				fmt.Printf("Failed to store key.\n")
 			}
@@ -286,7 +285,7 @@ func (page *RankInfo) updatePageRankWithInfo(update *RankUpdate, g *Gossiper) (r
 	})
 
 	if citations.CitedBy == nil {
-		return 0 //TODO: this should probably be a different value?
+		return 0
 	}
 
 	//PR(A) = (1-d) + d*(PR(T1)/deg(T1) + ... + PR(Tn)/deg(Tn))
