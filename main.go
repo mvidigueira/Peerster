@@ -98,7 +98,14 @@ func main() {
 			WriteTimeout: 10 * time.Second,
 			ReadTimeout:  10 * time.Second,
 		}
-		go srv.ListenAndServe()
+
+		go func() {
+			err := srv.ListenAndServe()
+			if err != nil {
+				panic(err)
+			}
+		}()
+		
 		log.Println("SERVING SEARCH")
 	}
 	<-stop
