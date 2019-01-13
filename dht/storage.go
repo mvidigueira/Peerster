@@ -224,7 +224,6 @@ func (s Storage) CrawlQueueHead() (string, error) {
 	newURLHash := sha512.Sum512(Itob(int(headSequenceNumber)))
 	head, found := s.Retrieve(newURLHash, "crawlQueue")
 	if !found {
-		log.Println("Error, Could not find head of queue.")
 		return "", errors.New("crawl queue head not found")
 	}
 
@@ -247,7 +246,7 @@ func (s Storage) GetPast() map[string]bool {
 	hash := GenerateKeyHash(pastMapID)
 	pastBytes, found := s.Retrieve(hash, pastMapID)
 	if !found {
-		log.Println("Could not find bloom filter.")
+		log.Println("Could not find past map.")
 	}
 	var decodedMap map[string]bool
 	d := gob.NewDecoder(bytes.NewReader(pastBytes))
