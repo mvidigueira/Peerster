@@ -12,6 +12,7 @@ Couse Project - Decentralized Systems Engineering 18 (EPFL)
 4. Stopwords - github.com/bbalet/stopwords
 5. Porterstemmer (stemming library) github.com/reiver/go-porterstemmer
 6. BoltDB (Persistent key-value store) github.com/etcd-io/bbolt
+7. Gcache (LRU cache) https://github.com/bluele/gcache
 
 All of the above dependencies are go gettable.
 
@@ -62,7 +63,7 @@ The above query will return the URL of every crawled document in the DHT which c
 
 ### UI
 
-The web UI for the search functionality can be found on port 8080 of localhost.
+The web UI for the search functionality can be found on port 80 of localhost.
 
 ### Encryption
 
