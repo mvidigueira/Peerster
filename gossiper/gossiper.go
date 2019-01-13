@@ -59,21 +59,23 @@ type Gossiper struct {
 
 	blockchainLedger *BlockchainLedger
 
-	dhtMyID                  [dht_util.IDByteSize]byte
-	dhtChanMap               *dht.ChanMap
-	bucketTable              *bucketTable
-	dhtDb                    *dht.Storage
-	dhtBootstrap             string
-	webCrawler               *webcrawler.Crawler
-	pRanker                  *ranker
-	diffieHellmanMapMutex    *sync.Mutex
-	diffieHellmanMap         map[[dht_util.IDByteSize]byte][]*DiffieHellmanNegotiationSession
-	activeDiffieHellmanMutex *sync.Mutex
-	activeDiffieHellmans     map[[dht_util.IDByteSize]byte][]*DiffieHellmanSession
-	negotiationMapMutex      *sync.Mutex
-	negotiationMap           map[[dht_util.IDByteSize]byte]chan [dht_util.IDByteSize]byte
-	encryptDHTOperations     bool
-	privateKey               *ecdsa.PrivateKey
+	dhtMyID                          [dht_util.IDByteSize]byte
+	dhtChanMap                       *dht.ChanMap
+	bucketTable                      *bucketTable
+	dhtDb                            *dht.Storage
+	dhtBootstrap                     string
+	webCrawler                       *webcrawler.Crawler
+	pRanker                          *ranker
+	diffieHellmanMapMutex            *sync.Mutex
+	diffieHellmanMap                 map[[dht_util.IDByteSize]byte][]*DiffieHellmanNegotiationSession
+	activeOutgoingDiffieHellmanMutex *sync.Mutex
+	activeOutgoingDiffieHellmans     map[[dht_util.IDByteSize]byte][]*DiffieHellmanSession
+	activeIngoingDiffieHellmanMutex  *sync.Mutex
+	activeIngoingDiffieHellmans      map[[dht_util.IDByteSize]byte][]*DiffieHellmanSession
+	negotiationMapMutex              *sync.Mutex
+	negotiationMap                   map[[dht_util.IDByteSize]byte]chan [dht_util.IDByteSize]byte
+	encryptDHTOperations             bool
+	privateKey                       *ecdsa.PrivateKey
 }
 
 //NewGossiper creates a new gossiper
@@ -126,16 +128,18 @@ func NewGossiper(address, name string, UIport string, peers []string, simple boo
 		dhtChanMap:   dht.NewChanMap(),
 		dhtBootstrap: dhtBootstrap,
 
-		webCrawler:               webcrawler.New(crawlLeader),
-		pRanker:                  newRanker(),
-		diffieHellmanMapMutex:    new(sync.Mutex),
-		diffieHellmanMap:         map[[dht_util.IDByteSize]byte][]*DiffieHellmanNegotiationSession{},
-		activeDiffieHellmanMutex: new(sync.Mutex),
-		activeDiffieHellmans:     map[[dht_util.IDByteSize]byte]([]*DiffieHellmanSession){},
-		encryptDHTOperations:     encryptDHTOperations,
-		privateKey:               privateKey,
-		negotiationMap:           map[[dht_util.IDByteSize]byte](chan [dht_util.IDByteSize]byte){},
-		negotiationMapMutex:      new(sync.Mutex),
+		webCrawler:                       webcrawler.New(crawlLeader),
+		pRanker:                          newRanker(),
+		diffieHellmanMapMutex:            new(sync.Mutex),
+		diffieHellmanMap:                 map[[dht_util.IDByteSize]byte][]*DiffieHellmanNegotiationSession{},
+		activeOutgoingDiffieHellmanMutex: new(sync.Mutex),
+		activeOutgoingDiffieHellmans:     map[[dht_util.IDByteSize]byte]([]*DiffieHellmanSession){},
+		activeIngoingDiffieHellmanMutex:  new(sync.Mutex),
+		activeIngoingDiffieHellmans:      map[[dht_util.IDByteSize]byte]([]*DiffieHellmanSession){},
+		encryptDHTOperations:             encryptDHTOperations,
+		privateKey:                       privateKey,
+		negotiationMap:                   map[[dht_util.IDByteSize]byte](chan [dht_util.IDByteSize]byte){},
+		negotiationMapMutex:              new(sync.Mutex),
 	}
 
 	g.bucketTable = newBucketTable(g.dhtMyID, g)

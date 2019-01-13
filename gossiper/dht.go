@@ -317,9 +317,9 @@ func (g *Gossiper) sendLookupKey(ns *dht.NodeState, key dht_util.TypeID, dbBucke
 func (g *Gossiper) replyLookupKey(senderAddr string, lookupKey *dht.Message) {
 	var key [dht_util.IDByteSize]byte
 	if lookupKey.ValueLookup.Encrypted {
-		g.activeDiffieHellmanMutex.Lock()
-		diffieSessions, f := g.activeDiffieHellmans[lookupKey.SenderID]
-		g.activeDiffieHellmanMutex.Unlock()
+		g.activeIngoingDiffieHellmanMutex.Lock()
+		diffieSessions, f := g.activeIngoingDiffieHellmans[lookupKey.SenderID]
+		g.activeIngoingDiffieHellmanMutex.Unlock()
 		if !f {
 			fmt.Println("No key found, descarding lookup...")
 			return
@@ -402,12 +402,12 @@ func (g *Gossiper) dhtMessageListenRoutine(cDHTMessage chan *dto.PacketAddressPa
 		case dht.StoreT:
 			if msg.Store.Encrypted {
 				go func(msg *dht.Message) {
-					g.activeDiffieHellmanMutex.Lock()
-					diffieSessions, f := g.activeDiffieHellmans[msg.SenderID]
-					g.activeDiffieHellmanMutex.Unlock()
+					g.activeIngoingDiffieHellmanMutex.Lock()
+					diffieSessions, f := g.activeIngoingDiffieHellmans[msg.SenderID]
+					g.activeIngoingDiffieHellmanMutex.Unlock()
 
 					if !f {
-						fmt.Println("No key found, discarding...")
+						fmt.Println("No key found, discarding store...")
 						return
 					}
 

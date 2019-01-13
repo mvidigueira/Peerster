@@ -44,15 +44,25 @@ func (g *Gossiper) CleanOldDiffieHellmanSessionsRoutine() {
 	for {
 		select {
 		case <-time.After(time.Second * 5):
-			g.activeDiffieHellmanMutex.Lock()
-			for key, v := range g.activeDiffieHellmans {
+			g.activeOutgoingDiffieHellmanMutex.Lock()
+			for key, v := range g.activeOutgoingDiffieHellmans {
 				for _, session := range v {
 					if session.expired() && time.Now().After(session.LastTimeUsed.Add(time.Second*60)) {
-						delete(g.activeDiffieHellmans, key)
+						delete(g.activeOutgoingDiffieHellmans, key)
 					}
 				}
 			}
-			g.activeDiffieHellmanMutex.Unlock()
+			g.activeOutgoingDiffieHellmanMutex.Unlock()
+
+			g.activeIngoingDiffieHellmanMutex.Lock()
+			for key, v := range g.activeIngoingDiffieHellmans {
+				for _, session := range v {
+					if session.expired() && time.Now().After(session.LastTimeUsed.Add(time.Second*5)) {
+						delete(g.activeOutgoingDiffieHellmans, key)
+					}
+				}
+			}
+			g.activeIngoingDiffieHellmanMutex.Unlock()
 		}
 	}
 }
@@ -171,9 +181,9 @@ func (g *Gossiper) negotiateDiffieHellmanInitiator(dest string, nodeID [dht_util
 
 		symmetricKey := diffieHellman.GenerateSymmetricKey(reply.DiffiePublicKey)
 
-		g.activeDiffieHellmanMutex.Lock()
-		g.activeDiffieHellmans[nodeID] = append(g.activeDiffieHellmans[nodeID], NewDiffieHellmanSession(symmetricKey, ack.ExpirationDate))
-		g.activeDiffieHellmanMutex.Unlock()
+		g.activeOutgoingDiffieHellmanMutex.Lock()
+		g.activeOutgoingDiffieHellmans[nodeID] = append(g.activeOutgoingDiffieHellmans[nodeID], NewDiffieHellmanSession(symmetricKey, ack.ExpirationDate))
+		g.activeOutgoingDiffieHellmanMutex.Unlock()
 
 		fmt.Printf("Key setup with %s\n", dest)
 
@@ -236,7 +246,7 @@ func (g *Gossiper) negotiateDiffieHellman(dest string, nodeID [dht_util.IDByteSi
 	}, dest)
 
 	// Wait for ack
-	ok, _ := g.waitForAcknowledge(dest, nodeID, rChannel)
+	ok, ack := g.waitForAcknowledge(dest, nodeID, rChannel)
 	if !ok {
 		fmt.Println("failed to get ack.")
 		return
@@ -246,9 +256,9 @@ func (g *Gossiper) negotiateDiffieHellman(dest string, nodeID [dht_util.IDByteSi
 	g.diffieAcklowledge(dest, packet.ID)
 
 	// Save symmetric key
-	g.activeDiffieHellmanMutex.Lock()
-	//g.activeDiffieHellmans[nodeID] = append(g.activeDiffieHellmans[nodeID], NewDiffieHellmanSession(symmetricKey, ack.ExpirationDate))
-	g.activeDiffieHellmanMutex.Unlock()
+	g.activeIngoingDiffieHellmanMutex.Lock()
+	g.activeIngoingDiffieHellmans[nodeID] = append(g.activeIngoingDiffieHellmans[nodeID], NewDiffieHellmanSession(symmetricKey, ack.ExpirationDate))
+	g.activeIngoingDiffieHellmanMutex.Unlock()
 
 	fmt.Println(symmetricKey)
 	fmt.Printf("Key setup with %s\n", dest)
@@ -315,7 +325,7 @@ func (g *Gossiper) diffieAcklowledge(dest string, id [dht_util.IDByteSize]byte) 
 		NodeID:         g.dhtMyID,
 		Init:           false,
 		ID:             id,
-		ExpirationDate: time.Now().Local().Add(time.Second * time.Duration(180))}
+		ExpirationDate: time.Now().Local().Add(time.Second * time.Duration(5))}
 	r, s, err := g.signPacket(ack)
 	if err != nil {
 		log.Fatal("could not sign request")
