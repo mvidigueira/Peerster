@@ -1,6 +1,7 @@
 .DS_Store
 Peerster
 .idea/
+*_index.db
 *.prof
 *.png
 *.out

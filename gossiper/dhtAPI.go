@@ -9,6 +9,8 @@ import (
 	"github.com/mvidigueira/Peerster/dht"
 )
 
+const timeOutSeconds = 1
+
 // LookupNodes looks for the closest nodes to a specific id (up to k nodes).
 // This id can represent a nodeID or a key hash.
 // Unlike LookupValue, it does not stop early if it encounters a node with the key stored.
@@ -35,7 +37,7 @@ func (g *Gossiper) lookupFinalPhase(snsa *dht.SafeNodeStateArray) (closest []*dh
 		go g.lookupSingle(node, snsa, chans[i])
 	}
 
-	cases, t := makeSelectCases(chans, 1)
+	cases, t := makeSelectCases(chans, timeOutSeconds)
 	defer t.Stop()
 	closer := false
 	answered := 0
@@ -75,7 +77,7 @@ func (g *Gossiper) lookupRound(snsa *dht.SafeNodeStateArray) (closest []*dht.Nod
 
 	answered := 0
 	closer := false
-	cases, t := makeSelectCases(chans, 1)
+	cases, t := makeSelectCases(chans, timeOutSeconds)
 	t.Stop()
 	for len(closestNodes) != 0 {
 		chosen, v, _ := reflect.Select(cases)
@@ -140,7 +142,7 @@ func (g *Gossiper) lookupFinalPhaseValue(snsa *dht.SafeNodeStateArray, dbBucket 
 		go g.lookupSingleValue(node, snsa, chans[i], dbBucket)
 	}
 
-	cases, t := makeSelectCasesValue(chans, 1)
+	cases, t := makeSelectCasesValue(chans, timeOutSeconds)
 	defer t.Stop()
 	closer := false
 	answered := 0
@@ -184,7 +186,7 @@ func (g *Gossiper) lookupRoundValue(snsa *dht.SafeNodeStateArray, dbBucket strin
 
 	answered := 0
 	closer := false
-	cases, t := makeSelectCasesValue(chans, 1)
+	cases, t := makeSelectCasesValue(chans, timeOutSeconds)
 	defer t.Stop()
 	for len(closestNodes) != 0 {
 		chosen, v, _ := reflect.Select(cases)

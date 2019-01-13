@@ -20,11 +20,11 @@ func (g *Gossiper) webCrawlerListenerRoutine() {
 		switch {
 		case packet.OutBoundLinks != nil:
 			go func(outboundLinks *webcrawler.OutBoundLinksPackage) {
-				//g.saveOutboundLinksInDHT(outboundLinks)
+				g.saveOutboundLinksInDHT(outboundLinks)
 			}(packet.OutBoundLinks)
 		case packet.CitationsPackage != nil:
 			go func(citation *webcrawler.CitationsPackage) {
-				//g.saveCitationsInDHT(citation)
+				g.saveCitationsInDHT(citation)
 			}(packet.CitationsPackage)
 		case packet.HyperlinkPackage != nil:
 			go func(hyperlinks *webcrawler.HyperlinkPackage) {
@@ -260,7 +260,7 @@ func (g *Gossiper) saveOutboundLinksInDHT(outboundLinks *webcrawler.OutBoundLink
 
 func (g *Gossiper) saveCitationsInDHT(citationsPackage *webcrawler.CitationsPackage) {
 	destinations := make(map[dht.NodeState][]*webcrawler.Citations)
-	fmt.Printf("Size of citation: %d\n.", len(citationsPackage.CitationsList))
+	fmt.Printf("Size of citation: %d\n", len(citationsPackage.CitationsList))
 	for _, citation := range citationsPackage.CitationsList {
 		citation := citation //create a copy of the variable
 		id := dht_util.GenerateKeyHash(citation.Url)

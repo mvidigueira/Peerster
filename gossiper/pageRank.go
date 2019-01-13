@@ -69,6 +69,31 @@ func newRanker() (pRanker *ranker) {
 	return
 }
 
+func (g *Gossiper) GetDocumentEstimate() int {
+	numberOfDocuments := 0
+	g.dhtDb.Db.View(func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte(dht.PageHashBucket))
+		stats := b.Stats()
+		numberOfDocuments = stats.KeyN
+		log.Printf("page hashes: %d\n", numberOfDocuments)
+		b = tx.Bucket([]byte(dht.PageRankBucket))
+		stats = b.Stats()
+		log.Printf("page ranks: %d\n", stats.KeyN)
+		if stats.KeyN > numberOfDocuments {
+			numberOfDocuments = stats.KeyN
+		}
+		return nil
+	})
+
+	hllEstimate := int(g.pRanker.hll.Estimate())
+	if hllEstimate > numberOfDocuments {
+		numberOfDocuments = hllEstimate
+	}
+	log.Printf("hll estimate: %d\n", hllEstimate)
+
+	return numberOfDocuments
+}
+
 type UpdateToProcess struct {
 	Update  *RankUpdate
 	IsLocal bool
@@ -94,31 +119,6 @@ func (g *Gossiper) receiveRankUpdate(update *RankUpdate, isLocal bool, isNew boo
 	g.pRanker.hll.Insert([]byte(update.RankInfo.Url))
 	g.pRanker.hllMux.Unlock()
 	g.processRankUpdates(&UpdateToProcess{Update: update, IsLocal: isLocal, IsNew: isNew})
-}
-
-func (g *Gossiper) GetDocumentEstimate() int {
-	numberOfDocuments := 0
-	g.dhtDb.Db.View(func(tx *bbolt.Tx) error {
-		b := tx.Bucket([]byte(dht.PageHashBucket))
-		stats := b.Stats()
-		numberOfDocuments = stats.KeyN
-		log.Printf("page hashes: %d\n", numberOfDocuments)
-		b = tx.Bucket([]byte(dht.PageRankBucket))
-		stats = b.Stats()
-		log.Printf("page ranks: %d\n", stats.KeyN)
-		if stats.KeyN > numberOfDocuments {
-			numberOfDocuments = stats.KeyN
-		}
-		return nil
-	})
-
-	hllEstimate := int(g.pRanker.hll.Estimate())
-	if hllEstimate > numberOfDocuments {
-		numberOfDocuments = hllEstimate
-	}
-	log.Printf("hll estimate: %d\n", hllEstimate)
-
-	return numberOfDocuments
 }
 
 func (g *Gossiper) processRankUpdates(toProcess *UpdateToProcess) {

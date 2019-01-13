@@ -352,7 +352,7 @@ func (g *Gossiper) dhtMessageListenRoutine(cDHTMessage chan *dto.PacketAddressPa
 			}(msg)
 		case dht.ValueLookupT:
 			go func(msg *dht.Message) {
-				fmt.Printf("VALUE LOOKUP for key %x from %x bucket: %s\n", msg.ValueLookup.Key, msg.SenderID, msg.ValueLookup.DbBucket)
+				fmt.Printf("VALUE LOOKUP %s\n", msg.ValueLookup.DbBucket)
 				g.replyLookupKey(sender, msg)
 			}(msg)
 		case dht.PingReplyT:
@@ -370,7 +370,7 @@ func (g *Gossiper) dhtMessageListenRoutine(cDHTMessage chan *dto.PacketAddressPa
 				if msg.ValueReply.Data != nil {
 					//fmt.Printf("VALUE REPLY with data: %x from %x\n", *msg.ValueReply.Data, msg.SenderID)
 				} else {
-					fmt.Printf("VALUE REPLY with results %s from %x\n", dht.String(*msg.ValueReply.NodeStates), msg.SenderID)
+					fmt.Println("VALUE REPLY")
 					if msg.ValueReply.Encrypted {
 						log.Fatal("EEEEEEERRRRRROOOO")
 					}
@@ -382,7 +382,7 @@ func (g *Gossiper) dhtMessageListenRoutine(cDHTMessage chan *dto.PacketAddressPa
 				go func(msg *dht.Message) {
 					diffieSessions, f := g.activeDiffieHellmans[sender]
 					if !f {
-						fmt.Println("No key found, descarding...")
+						fmt.Println("No key found, discarding...")
 						return
 					}
 
@@ -400,12 +400,12 @@ func (g *Gossiper) dhtMessageListenRoutine(cDHTMessage chan *dto.PacketAddressPa
 						}
 					}
 					if !encrypted {
-						fmt.Println("failed to decrypt message, disgarding..")
+						fmt.Println("failed to decrypt message, discarding..")
 					}
 				}(msg)
 			} else {
 				go func(msg *dht.Message) {
-					fmt.Printf("STORE REQUEST from %x\n", msg.SenderID)
+					//fmt.Printf("STORE REQUEST from %x\n", msg.SenderID)
 					g.replyStore(msg)
 				}(msg)
 			}
