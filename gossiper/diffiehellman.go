@@ -47,7 +47,7 @@ func (g *Gossiper) CleanOldDiffieHellmanSessionsRoutine() {
 			g.activeDiffieHellmanMutex.Lock()
 			for key, v := range g.activeDiffieHellmans {
 				for _, session := range v {
-					if session.expired() && time.Now().After(session.LastTimeUsed.Add(time.Second*10)) {
+					if session.expired() && time.Now().After(session.LastTimeUsed.Add(time.Second*60)) {
 						delete(g.activeDiffieHellmans, key)
 					}
 				}
@@ -315,7 +315,7 @@ func (g *Gossiper) diffieAcklowledge(dest string, id [dht_util.IDByteSize]byte) 
 		NodeID:         g.dhtMyID,
 		Init:           false,
 		ID:             id,
-		ExpirationDate: time.Now().Local().Add(time.Second * time.Duration(10))}
+		ExpirationDate: time.Now().Local().Add(time.Second * time.Duration(180))}
 	r, s, err := g.signPacket(ack)
 	if err != nil {
 		log.Fatal("could not sign request")
