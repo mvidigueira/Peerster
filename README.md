@@ -6,10 +6,12 @@ Couse Project - Decentralized Systems Engineering 18 (EPFL)
 
 ### Install dependencies 
 
-1. Protobuf - https://github.com/dedis/protobuf
+1. Protobuf - github.com/dedis/protobuf
 2. Murmur3 (hash-function) - github.com/spaolacci/murmur3
 3. Goquery (html parsing library) - github.com/PuerkitoBio/goquery
 4. Stopwords - github.com/bbalet/stopwords
+5. Porterstemmer (stemming library) github.com/reiver/go-porterstemmer
+6. BoltDB (Persistent key-value store) github.com/etcd-io/bbolt
 
 All of the above dependencies are go gettable.
 
@@ -58,7 +60,9 @@ Example of query of webcrawler data:
 
 The above query will return the URL of every crawled document in the DHT which contain the keyword **sweden** together with the number of occurances of that keyword in the document.
 
+### UI
 
+The web UI for the search functionality can be found on port 8080 of localhost.
 
 
 
