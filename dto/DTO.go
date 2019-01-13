@@ -931,4 +931,5 @@ type DiffieHellman struct {
 	EcdsaPublicKey  []byte
 	R               []byte
 	S               []byte
+	ExpirationDate  time.Time
 }

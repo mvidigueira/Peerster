@@ -27,10 +27,10 @@ func (ds *DiffieHellmanSession) expired() bool {
 	return time.Now().After(ds.ExpirationDate)
 }
 
-func NewDiffieHellmanSession(key []byte) *DiffieHellmanSession {
+func NewDiffieHellmanSession(key []byte, ExpirationDate time.Time) *DiffieHellmanSession {
 	return &DiffieHellmanSession{
 		Key:            key,
-		ExpirationDate: time.Now().Local().Add(time.Second * time.Duration(60)),
+		ExpirationDate: ExpirationDate,
 	}
 }
 
@@ -124,10 +124,10 @@ func (g *Gossiper) negotiateDiffieHellmanInitiator(dest string) chan ([]byte) {
 		}
 
 		// Send ack
-		g.diffieAcklowledge(dest)
+		ack := g.diffieAcklowledge(dest)
 
 		// Wait for ack
-		ok = g.waitForAcknowledge(dest, rChannel)
+		ok, _ = g.waitForAcknowledge(dest, rChannel)
 		if !ok {
 			fmt.Println("failed to get ack.")
 			delete(g.diffieHellmanMap, dest)
@@ -136,7 +136,7 @@ func (g *Gossiper) negotiateDiffieHellmanInitiator(dest string) chan ([]byte) {
 
 		symmetricKey := diffieHellman.GenerateSymmetricKey(reply.DiffiePublicKey)
 
-		g.activeDiffieHellmans[dest] = append(g.activeDiffieHellmans[dest], NewDiffieHellmanSession(symmetricKey))
+		g.activeDiffieHellmans[dest] = append(g.activeDiffieHellmans[dest], NewDiffieHellmanSession(symmetricKey, ack.ExpirationDate))
 
 		delete(g.diffieHellmanMap, dest)
 
@@ -189,7 +189,7 @@ func (g *Gossiper) negotiateDiffieHellman(ch chan *dto.DiffieHellman, dest strin
 	}, dest)
 
 	// Wait for ack
-	ok := g.waitForAcknowledge(dest, rChannel)
+	ok, ack := g.waitForAcknowledge(dest, rChannel)
 	if !ok {
 		fmt.Println("failed to get ack.")
 		delete(g.diffieHellmanMap, dest)
@@ -200,7 +200,7 @@ func (g *Gossiper) negotiateDiffieHellman(ch chan *dto.DiffieHellman, dest strin
 	g.diffieAcklowledge(dest)
 
 	// Save symmetric key
-	g.activeDiffieHellmans[dest] = append(g.activeDiffieHellmans[dest], NewDiffieHellmanSession(symmetricKey))
+	g.activeDiffieHellmans[dest] = append(g.activeDiffieHellmans[dest], NewDiffieHellmanSession(symmetricKey, ack.ExpirationDate))
 
 	// Clean up
 	delete(g.diffieHellmanMap, dest)
@@ -264,8 +264,8 @@ func (g *Gossiper) verifyPublicKey(key []byte, sender string) bool {
 }
 
 // Send acknowledgement package
-func (g *Gossiper) diffieAcklowledge(dest string) {
-	ack := &dto.DiffieHellman{EcdsaPublicKey: g.dhtMyID[:]}
+func (g *Gossiper) diffieAcklowledge(dest string) *dto.DiffieHellman {
+	ack := &dto.DiffieHellman{EcdsaPublicKey: g.dhtMyID[:], ExpirationDate: time.Now().Local().Add(time.Second * time.Duration(60))}
 	r, s, err := g.signPacket(ack)
 	if err != nil {
 		log.Fatal("could not sign request")
@@ -275,26 +275,28 @@ func (g *Gossiper) diffieAcklowledge(dest string) {
 	g.sendUDP(&dto.GossipPacket{
 		DiffieHellman: ack,
 	}, dest)
+
+	return ack
 }
 
-func (g *Gossiper) waitForAcknowledge(dest string, responseChan chan *dto.DiffieHellman) bool {
+func (g *Gossiper) waitForAcknowledge(dest string, responseChan chan *dto.DiffieHellman) (bool, *dto.DiffieHellman) {
 	select {
 	case res := <-responseChan:
 		ok := g.verifyPublicKey(res.EcdsaPublicKey, dest)
 		if !ok {
 			fmt.Println("Failed to verify public key.")
-			return false
+			return false, nil
 		}
 		ok = g.verifySignature(res)
 		if !ok {
 			fmt.Println("Message signature not ok. Aborting diffie-hellman key exchange. 5")
-			return false
+			return false, nil
 		}
-		return true
+		return true, res
 	case <-time.After(time.Second * 10):
 		fmt.Println("Timeout, aborting.")
 		delete(g.diffieHellmanMap, dest)
-		return false
+		return false, nil
 	}
 }
 
