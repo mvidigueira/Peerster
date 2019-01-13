@@ -9,6 +9,7 @@ import (
 	"log"
 
 	"github.com/dedis/protobuf"
+	"log"
 
 	. "github.com/mvidigueira/Peerster/dht_util"
 	"github.com/mvidigueira/Peerster/webcrawler"
@@ -88,41 +89,6 @@ func (s *Storage) Retrieve(key TypeID, bucket string) (data []byte, ok bool) {
 	return
 }
 
-func (s *Storage) AddLinksForKeyword(key string, newKeywordToUrlMap webcrawler.KeywordToURLMap) (ok bool) {
-	ok = true
-	idArray := GenerateKeyHash(key)
-	id := idArray[:]
-	var err error
-
-	s.Db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(KeywordsBucket))
-		var keywordMap webcrawler.KeywordToURLMap
-		data := b.Get(id)
-		if data == nil {
-			keywordMap = webcrawler.KeywordToURLMap{key, make(map[string]int)}
-		} else {
-			err = protobuf.Decode(data, &keywordMap)
-			if err != nil {
-				panic(err)
-			}
-		}
-		for k, val := range newKeywordToUrlMap.LinkData {
-			keywordMap.LinkData[k] = val
-		}
-		data, err := protobuf.Encode(&keywordMap)
-		if err != nil {
-			panic(err)
-		}
-		err = b.Put(id, data)
-		return err
-	})
-
-	if err != nil {
-		ok = false
-	}
-	return
-}
-
 func (s *Storage) BulkAddLinksForKeyword(urlMaps []*webcrawler.KeywordToURLMap) (ok bool) {
 
 	ok = true
@@ -162,6 +128,7 @@ func (s *Storage) BulkAddLinksForKeyword(urlMaps []*webcrawler.KeywordToURLMap) 
 	})
 
 	if err != nil {
+		log.Print(err)
 		ok = false
 	}
 	return

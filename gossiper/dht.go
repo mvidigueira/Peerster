@@ -123,7 +123,6 @@ func (g *Gossiper) sendEncryptedStore(ns *dht.NodeState, key dht_util.TypeID, da
 	case <-time.After(time.Second * 5):
 		return errors.New("Failed to get key")
 	}
-
 	return nil
 }
 

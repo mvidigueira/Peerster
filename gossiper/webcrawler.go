@@ -167,7 +167,7 @@ func (g *Gossiper) batchSendURLS(owner *dht.NodeState, hyperlinks []string) {
 			}
 			packetBytes, err := protobuf.Encode(links)
 			if err != nil {
-				log.Fatal()
+				panic(err)
 			}
 			aesEncrypter := aesencryptor.New(key)
 			cipherText := aesEncrypter.Encrypt(packetBytes)

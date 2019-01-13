@@ -9,7 +9,7 @@ import (
 	"github.com/mvidigueira/Peerster/dht"
 )
 
-const timeOutSeconds = 3
+const timeOutSeconds = 1
 
 // LookupNodes looks for the closest nodes to a specific id (up to k nodes).
 // This id can represent a nodeID or a key hash.
