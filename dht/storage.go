@@ -3,6 +3,7 @@ package dht
 import (
 	"github.com/dedis/protobuf"
 	"log"
+	"sort"
 
 	. "github.com/mvidigueira/Peerster/dht_util"
 	"github.com/mvidigueira/Peerster/webcrawler"
@@ -20,12 +21,6 @@ const (
 type Storage struct {
 	Db *bolt.DB
 }
-
-// Special store operation for keyword -> url mappings
-// We need this extra function since we want to support PUT operations. It might not be the cleanest solution to wrap
-// the keywords and URLs in struct but I could not think about any other way.
-// The definiton of KeywordToURLMap will move to the webcrawler package but it is in a seperate branch at the moment. I will move this when
-// I merge the two branches.
 
 func NewStorage(gossiperName string) (s *Storage) {
 	db, err := bolt.Open(gossiperName+"_index.db", 0666, nil)
@@ -46,6 +41,11 @@ func NewStorage(gossiperName string) (s *Storage) {
 	return
 }
 
+type urlData struct {
+	url string
+	keywordFrequency int
+}
+
 func (s *Storage) Retrieve(key TypeID, bucket string) (data []byte, ok bool) {
 	ok = true
 	s.Db.View(func(tx *bolt.Tx) error {
@@ -59,6 +59,41 @@ func (s *Storage) Retrieve(key TypeID, bucket string) (data []byte, ok bool) {
 		copy(data, dbData)
 		return nil
 	})
+
+	maxSize := 7500
+	if bucket == KeywordsBucket && len(data) > maxSize {
+		keywordMap := &webcrawler.KeywordToURLMap{}
+		err := protobuf.Decode(data, keywordMap)
+		if err != nil {
+			panic(err)
+		}
+		newMap := &webcrawler.KeywordToURLMap{Keyword:keywordMap.Keyword, LinkData: make(map[string]int)}
+		i := 0
+		defer func(){
+			log.Printf("packeted %d\n", i)
+		}()
+		data = []byte{}
+		keywordData := []*urlData{}
+		for url, f := range keywordMap.LinkData {
+			keywordData = append(keywordData, &urlData{url, f})
+		}
+		sort.Slice(keywordData, func(i, j int) bool {
+			return keywordData[i].keywordFrequency > keywordData[j].keywordFrequency
+		})
+
+		for _, d := range keywordData {
+			if len(data)+len(d.url)+100 > maxSize {
+				return
+			}
+			i++
+			newMap.LinkData[d.url] = d.keywordFrequency
+			data, err = protobuf.Encode(newMap)
+			if err != nil {
+				panic(err)
+			}
+		}
+	}
+
 	return
 }
 
