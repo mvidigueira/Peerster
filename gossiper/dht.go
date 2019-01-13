@@ -116,14 +116,10 @@ func (g *Gossiper) replyStore(msg *dht.Message) {
 		go func() {
 			batchTemp := &BatchMessage{}
 			protobuf.Decode(msg.Store.Data, batchTemp)
-			//for _, item := range batchTemp.UrlMapList {
-			//	stores++
-			//	ok := g.dhtDb.AddLinksForKeyword(item.Keyword, *item)
-			//	if !ok {
-			//		fmt.Printf("Failed to add keywords.\n")
-			//	}
-			//}
-			g.dhtDb.BulkAddLinksForKeyword(batchTemp.UrlMapList)
+			ok := g.dhtDb.BulkAddLinksForKeyword(batchTemp.UrlMapList)
+			if !ok {
+				fmt.Printf("Failed to add keywords.\n")
+			}
 		}()
 	case dht.PageHashBucket:
 		go func() {
@@ -139,36 +135,40 @@ func (g *Gossiper) replyStore(msg *dht.Message) {
 		}()
 
 	case dht.LinksBucket:
-		batchTemp := &BatchMessage{}
-		err := protobuf.Decode(msg.Store.Data, batchTemp)
-		if err != nil {
-			panic(err)
-		}
-		var links []string
-		for _, item := range batchTemp.OutBoundLinksPackages {
-			stores++
-			links = append(links, item.OutBoundLinks...)
-		}
-		url := batchTemp.OutBoundLinksPackages[0].Url
+		go func() {
+			batchTemp := &BatchMessage{}
+			err := protobuf.Decode(msg.Store.Data, batchTemp)
+			if err != nil {
+				panic(err)
+			}
+			var links []string
+			for _, item := range batchTemp.OutBoundLinksPackages {
+				stores++
+				links = append(links, item.OutBoundLinks...)
+			}
+			url := batchTemp.OutBoundLinksPackages[0].Url
 
-		idArray := dht_util.GenerateKeyHash(url)
-		id := idArray[:]
+			idArray := dht_util.GenerateKeyHash(url)
+			id := idArray[:]
 
-		outboundPackage := &webcrawler.OutBoundLinksPackage{batchTemp.OutBoundLinksPackages[0].Url, links}
-		data, err := protobuf.Encode(outboundPackage)
-		g.dhtDb.Db.Batch(func(tx *bbolt.Tx) error {
-			b := tx.Bucket([]byte(dht.LinksBucket))
-			err = b.Put(id, data)
-			return err
-		})
-		if err != nil {
-			log.Fatal(err)
-		}
+			outboundPackage := &webcrawler.OutBoundLinksPackage{batchTemp.OutBoundLinksPackages[0].Url, links}
+			data, err := protobuf.Encode(outboundPackage)
+			g.dhtDb.Db.Batch(func(tx *bbolt.Tx) error {
+				b := tx.Bucket([]byte(dht.LinksBucket))
+				err = b.Put(id, data)
+				return err
+			})
+			if err != nil {
+				log.Fatal(err)
+			}
 
-		numberOfLinks := len(links)
-		rankInfo := &RankInfo{Url: url, Rank: InitialRank, NumberOfOutboundLinks: numberOfLinks}
-		relerr := rankInfo.updatePageRank(g)
-		go g.setRank(*outboundPackage, *rankInfo, relerr)
+			numberOfLinks := len(links)
+			rankInfo := &RankInfo{Url: url, Rank: InitialRank, NumberOfOutboundLinks: numberOfLinks}
+			for _, outLink := range links {
+				update := &RankUpdate{outLink, rankInfo}
+				g.receiveRankUpdate(update, true, true)
+			}
+		}()
 
 	case dht.CitationsBucket:
 		go func() {
@@ -220,7 +220,7 @@ func (g *Gossiper) replyStore(msg *dht.Message) {
 				panic(err)
 			}
 			for _, update := range batchTemp.PageRankUpdates {
-				g.receiveRankUpdate(update)
+				g.receiveRankUpdate(update, false, false)
 			}
 		}()
 	default:
@@ -301,7 +301,7 @@ func (g *Gossiper) dhtMessageListenRoutine(cDHTMessage chan *dto.PacketAddressPa
 			//fmt.Printf("NODE LOOKUP for node %x from %x\n", msg.NodeLookup.NodeID, msg.SenderID)
 			g.replyLookupNode(sender, msg)
 		case dht.ValueLookupT:
-			fmt.Printf("VALUE LOOKUP for key %x from %x\n", msg.ValueLookup.Key, msg.SenderID)
+			fmt.Printf("VALUE LOOKUP for key %x from %x, bucket: %s\n", msg.ValueLookup.Key, msg.SenderID, msg.ValueLookup.DbBucket)
 			g.replyLookupKey(sender, msg)
 		case dht.PingReplyT:
 			fmt.Printf("PING REPLY from %x\n", msg.SenderID)
@@ -352,7 +352,7 @@ func (g *Gossiper) lookupWord(token string) (urlMap *webcrawler.KeywordToURLMap)
 	word := porterstemmer.StemString(token)
 	data, found := g.LookupValue(dht_util.GenerateKeyHash(word), dht.KeywordsBucket)
 	if !found {
-		log.Printf("Keyword not found: %s\n", token)
+		log.Printf("Keyword not found: %s (stem: %s)\n", token, word)
 		return nil
 	}
 	urlMap = &webcrawler.KeywordToURLMap{}
@@ -375,23 +375,28 @@ func (g *Gossiper) DoSearch(query string) (rankedResults webcrawler.RankedResult
 	if len(tokens) < 0 {
 		return
 	}
-	var numberOfDocuments int //TODO: we should improve this estimate
 
-	g.dhtDb.Db.View(func(tx *bbolt.Tx) error {
-		b := tx.Bucket([]byte(dht.PageHashBucket))
-		stats := b.Stats()
-		numberOfDocuments = stats.KeyN
-		return nil
-	})
-
-	newResults := g.lookupWord(tokens[0])
+	i := 0
+	var newResults *webcrawler.KeywordToURLMap
+	for ; i<len(tokens); i++{
+		t := tokens[i]
+		if len(t) < webcrawler.MinWordLen {
+			continue
+		}
+		newResults = g.lookupWord(t)
+		if newResults == nil {
+			log.Printf("TERM %s NOT FOUND \n", t)
+		}else{
+			break
+		}
+	}
 	if newResults == nil {
-		log.Printf("TERM %s NOT FOUND \n", tokens[0])
 		return
 	}
+	numberOfDocuments := g.GetDocumentEstimate()
 	results := webcrawler.NewSearchResults(newResults, numberOfDocuments)
 	sort.Sort(results)
-	for _, t := range tokens[1:] {
+	for _, t := range tokens[i:] {
 		if len(t) < webcrawler.MinWordLen {
 			continue
 		}
@@ -431,8 +436,13 @@ func (g *Gossiper) DoSearch(query string) (rankedResults webcrawler.RankedResult
 	}
 
 	for _, rankedResult := range rankedResults.Results {
-		rankedResult.Result.SimScore = rankedResult.Result.SimScore / simScoreMax
-		pageRank := rankedResult.PageRank/pageRankMax
+		if simScoreMax != 0 {
+			rankedResult.Result.SimScore = rankedResult.Result.SimScore / simScoreMax
+		}
+		pageRank := rankedResult.PageRank
+		if pageRankMax != 0 {
+			pageRank = rankedResult.PageRank / pageRankMax
+		}
 		rankedResult.Rank = (1-pageRankWeight)*rankedResult.Result.SimScore + pageRankWeight*rankedResult.PageRank*pageRank
 	}
 

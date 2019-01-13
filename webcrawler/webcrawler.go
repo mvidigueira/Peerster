@@ -53,7 +53,7 @@ func (wc *Crawler) Start() {
 	if wc.leader {
 		wc.InChan <- &CrawlerPacket{
 			HyperlinkPackage: &HyperlinkPackage{
-				Links: []string{"/wiki/World_War_II"},
+				Links: []string{"/wiki/Outline_of_academic_disciplines"},
 			},
 		}
 	}
@@ -63,11 +63,12 @@ func (wc *Crawler) Start() {
 
 // Starts crawl loop
 func (wc *Crawler) crawl() {
+	ticker := time.NewTicker(time.Second * 1)
 
 	go func() {
 		for {
 			select {
-			case <-time.After(time.Second * 1):
+			case <-ticker.C:
 				if len(wc.crawlQueue) == 0 {
 					continue
 				}
@@ -79,6 +80,7 @@ func (wc *Crawler) crawl() {
 					wc.updateQueue([]string{nextPage})
 					continue
 				}
+
 
 				fmt.Printf("Crawled %s, found %d hyperlinks and %d keywords.\n", nextPage, len(page.Hyperlinks), len(page.KeywordFrequencies))
 
