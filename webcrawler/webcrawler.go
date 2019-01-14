@@ -64,7 +64,7 @@ func (wc *Crawler) Start(past map[string]bool) {
 
 // PRIVATE METHODS
 
-const politeTimeoutSeconds = 2
+const politeTimeoutSeconds = 3
 
 // Starts crawl loop
 func (wc *Crawler) crawl() {
@@ -72,7 +72,7 @@ func (wc *Crawler) crawl() {
 		for {
 			select {
 			case nextPage := <-wc.NextCrawl:
-				time.Sleep(time.Millisecond * 1000)
+				time.Sleep(time.Second * politeTimeoutSeconds)
 
 				wc.IsCrawling = true
 

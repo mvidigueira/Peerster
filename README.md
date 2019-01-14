@@ -63,7 +63,7 @@ The above query will return the URL of every crawled document in the DHT which c
 
 ### UI
 
-The web UI for the search functionality can be found on port 80 of localhost. **Note:** the root folder of your GOPATH must be named **go** in order for the UI to work properly.
+The web UI for the search functionality can be found on port 8080 of localhost. **Note:** the root folder of your GOPATH must be named **go** in order for the UI to work properly.
 
 ### Encryption
 
