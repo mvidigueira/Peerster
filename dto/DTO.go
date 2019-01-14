@@ -4,10 +4,11 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
-	"github.com/dedis/protobuf"
 	"log"
 	"net"
 	"time"
+
+	"github.com/dedis/protobuf"
 
 	"github.com/mvidigueira/Peerster/dht_util"
 
@@ -932,4 +933,7 @@ type DiffieHellman struct {
 	R               []byte
 	S               []byte
 	ExpirationDate  time.Time
+	NodeID          [dht_util.IDByteSize]byte
+	Init            bool
+	ID              [dht_util.IDByteSize]byte
 }

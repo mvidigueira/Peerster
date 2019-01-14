@@ -1,10 +1,12 @@
 package gossiper
 
 import (
+	"bytes"
 	"fmt"
-	"github.com/dedis/protobuf"
 	"log"
 	"time"
+
+	"github.com/dedis/protobuf"
 
 	"github.com/mvidigueira/Peerster/dht_util"
 	"github.com/mvidigueira/Peerster/diffie_hellman/aesencryptor"
@@ -13,6 +15,47 @@ import (
 	"github.com/mvidigueira/Peerster/dto"
 	"github.com/mvidigueira/Peerster/webcrawler"
 )
+
+func (g *Gossiper) startCrawler() {
+
+	fmt.Println("START CRAWL")
+
+	queue, ok := g.dhtDb.CrawlQueueHeadPointer()
+	if !ok {
+		log.Fatal("Queue index not found.")
+	}
+	if queue == 0 {
+		g.initiateFreshCrawl()
+		return
+	}
+	g.initiateAndRestoreCrawl()
+}
+
+func (g *Gossiper) initiateFreshCrawl() {
+	// Fresh start of crawl, initiate queue from start point if leader.
+	g.webCrawler.Start(map[string]bool{})
+	if g.webCrawler.Leader {
+		err := g.dhtDb.UpdateCrawlQueue([]byte("/wiki/Swedish_Empire"))
+		if err != nil {
+			log.Fatal("Error saving root url.")
+		}
+		g.webCrawler.OutChan <- &webcrawler.CrawlerPacket{
+			Done: &webcrawler.DoneCrawl{Delete: false},
+		}
+	}
+}
+
+func (g *Gossiper) initiateAndRestoreCrawl() {
+	fmt.Println("RESTORING CRAWL")
+	// Restore bloom filter
+	past := g.dhtDb.GetPast()
+
+	g.webCrawler.Start(past)
+
+	g.webCrawler.OutChan <- &webcrawler.CrawlerPacket{
+		Done: &webcrawler.DoneCrawl{Delete: false},
+	}
+}
 
 //webCrawlerListenRouting - deals with indexing of webpages and hyperlink distribution
 func (g *Gossiper) webCrawlerListenerRoutine() {
@@ -43,6 +86,27 @@ func (g *Gossiper) webCrawlerListenerRoutine() {
 				_, found := g.LookupValue(pageHash.Hash, dht.PageHashBucket)
 				packet.ResChan <- found
 			}(packet.PageHash)
+		case packet.PastMapPackage != nil:
+			g.dhtDb.SavePast(packet.PastMapPackage.Content)
+		case packet.Done != nil:
+			go func(done *webcrawler.DoneCrawl) {
+				// Crawl of page done, get new url from db and feed it to crawler.
+				if done.Delete {
+					err := g.dhtDb.DeleteCrawlQueueHead()
+					if err != nil {
+						fmt.Println("failed to delete head.")
+					}
+				}
+				head, err := g.dhtDb.CrawlQueueHead()
+				if err != nil {
+					time.Sleep(time.Second * 2)
+					g.webCrawler.OutChan <- &webcrawler.CrawlerPacket{
+						Done: done,
+					}
+					return
+				}
+				g.webCrawler.NextCrawl <- head
+			}(packet.Done)
 		}
 	}
 }
@@ -91,8 +155,11 @@ func (g *Gossiper) batchSendURLS(owner *dht.NodeState, hyperlinks []string) {
 		}
 		var gossiperPacket *dto.GossipPacket
 		if g.encryptDHTOperations {
-			ch := g.getKey(owner.Address)
+			ch := g.getKey(owner.Address, owner.NodeID)
 			key := <-ch
+			if key == nil {
+				return
+			}
 			if len(key) == 0 {
 				log.Fatal("Fetching of key failed.")
 			}
@@ -109,6 +176,7 @@ func (g *Gossiper) batchSendURLS(owner *dht.NodeState, hyperlinks []string) {
 			gossiperPacket = &dto.GossipPacket{
 				EncryptedWebCrawlerPacket: &webcrawler.EncryptedCrawlerPacket{
 					Packet: cipherText,
+					Origin: g.dhtMyID,
 				},
 			}
 		} else {
@@ -208,10 +276,11 @@ func (g *Gossiper) distributeHyperlinks(packet *webcrawler.HyperlinkPackage) {
 	for owner, hyperlinks := range domains {
 		if owner.Address == g.address {
 			// Send back the urls belonging to this nodes domain
-			g.webCrawler.InChan <- &webcrawler.CrawlerPacket{
-				HyperlinkPackage: &webcrawler.HyperlinkPackage{
-					Links: hyperlinks,
-				},
+			for _, link := range hyperlinks {
+				err := g.dhtDb.UpdateCrawlQueue([]byte(link))
+				if err != nil {
+					log.Fatal("Error saving link")
+				}
 			}
 		} else {
 			// Url belong to another crawlers domain.
@@ -247,13 +316,20 @@ func (g *Gossiper) saveOutboundLinksInDHT(outboundLinks *webcrawler.OutBoundLink
 		if err != nil {
 			panic(err)
 		}
-		if g.encryptDHTOperations {
-			err = g.sendEncryptedStore(closest, id, packetBytes, dht.LinksBucket)
+
+		if bytes.Equal(closest.NodeID[:], g.dhtMyID[:]) {
+			msg := g.newDHTStore(g.dhtMyID, packetBytes, dht.LinksBucket, false)
+			g.replyStore(msg)
 		} else {
-			err = g.sendStore(closest, id, packetBytes, dht.LinksBucket)
-		}
-		if err != nil {
-			fmt.Printf("Failed to store key.\n")
+			if g.encryptDHTOperations {
+				err = g.sendEncryptedStore(closest, id, packetBytes, dht.LinksBucket)
+
+			} else {
+				err = g.sendStore(closest, id, packetBytes, dht.LinksBucket)
+			}
+			if err != nil {
+				fmt.Printf("Failed to store key.\n")
+			}
 		}
 	}
 }
@@ -341,34 +417,65 @@ func (g *Gossiper) savePageHashInDHT(pageHash *webcrawler.PageHashPackage) {
 	}
 }
 
-func (g *Gossiper) getKey(dest string) chan []byte {
+func (g *Gossiper) getKey(dest string, nodeID [dht_util.IDByteSize]byte) chan []byte {
 	resChan := make(chan []byte)
 	go func() {
-		diffieSessions, f := g.activeDiffieHellmans[dest]
-		_, activeNegotiation := g.diffieHellmanMap[dest]
+		// Get currently active session if any
+		g.activeOutgoingDiffieHellmanMutex.Lock()
+		diffieSessions, f := g.activeOutgoingDiffieHellmans[nodeID]
+		g.activeOutgoingDiffieHellmanMutex.Unlock()
 
+		// Check if all current sessions are expired
 		var allSessionsExpired = true
 		for _, session := range diffieSessions {
 			allSessionsExpired = session.expired()
 		}
 
-		if !activeNegotiation && allSessionsExpired {
-			// Start negotiation
-			rChannel := make(chan *dto.DiffieHellman)
-			g.diffieHellmanMap[dest] = rChannel
-			select {
-			case k := <-g.negotiateDiffieHellmanInitiator(dest):
-				resChan <- k
-			case <-time.After(time.Second * 5):
-				resChan <- []byte{}
-				log.Println("Failed to initiate diffie-hellman.2")
-			}
-		} else if f {
+		if f && len(diffieSessions) > 0 && !allSessionsExpired {
+			// We have a valid session
 			resChan <- diffieSessions[len(diffieSessions)-1].Key
 		} else {
-			time.Sleep(time.Second * 5)
-			g.getKey(dest)
-			return
+			// We need to negotiate new session
+			g.negotiationMapMutex.Lock()
+			// We only want 1 negotiation at a time
+			ch, f := g.negotiationMap[nodeID]
+			if !f {
+				fmt.Println("Negotiation new key.")
+
+				negotiationChannel := make(chan [dht_util.IDByteSize]byte)
+				g.negotiationMap[nodeID] = negotiationChannel
+				g.negotiationMapMutex.Unlock()
+
+				// Start negotiation
+				select {
+				case k := <-g.negotiateDiffieHellmanInitiator(dest, nodeID):
+					if k == nil {
+						fmt.Println("Failed to initiate diffie-hellman. Retrying...")
+						resChan <- nil
+					}
+					fmt.Println("Succeded with new key.")
+
+					resChan <- k
+					g.negotiationMapMutex.Lock()
+					delete(g.negotiationMap, nodeID)
+					g.negotiationMapMutex.Unlock()
+				case <-time.After(time.Second * 5):
+					g.negotiationMapMutex.Lock()
+					delete(g.negotiationMap, nodeID)
+					g.negotiationMapMutex.Unlock()
+					fmt.Println("Failed to initiate diffie-hellman.2")
+					resChan <- nil
+				}
+			} else {
+				// we need a new key but a negotiation is already active -> subscribe to the channel
+				g.negotiationMapMutex.Unlock()
+				select {
+				case newKey := <-ch:
+					resChan <- newKey[:]
+				case <-time.After(time.Second * 30):
+					resChan <- nil
+				}
+			}
 		}
 	}()
 	return resChan
@@ -377,20 +484,37 @@ func (g *Gossiper) getKey(dest string) chan []byte {
 func (g *Gossiper) decryptHyperlinkPackage(sender string, encryptedPacket *webcrawler.EncryptedCrawlerPacket) chan *webcrawler.HyperlinkPackage {
 	callBackChan := make(chan *webcrawler.HyperlinkPackage)
 	go func() {
-		ch := g.getKey(sender)
-		key := <-ch
-		aesEncrypter := aesencryptor.New(key)
-		cipher, err := aesEncrypter.Decrypt(encryptedPacket.Packet)
-		if err != nil {
-			fmt.Println("failed to encrypt hyperlink msg.")
+
+		g.activeIngoingDiffieHellmanMutex.Lock()
+		diffieSessions, f := g.activeIngoingDiffieHellmans[encryptedPacket.Origin]
+		g.activeIngoingDiffieHellmanMutex.Unlock()
+
+		if !f {
+			fmt.Println("No key found, discarding...")
+			return
 		}
 
-		hyperlinkPackage := &webcrawler.HyperlinkPackage{}
-		err = protobuf.Decode(cipher, hyperlinkPackage)
-		if err != nil {
-			log.Fatal("error decrypting crawler packet")
+		encrypted := false
+		for i := 0; i < len(diffieSessions); i++ {
+			session := diffieSessions[len(diffieSessions)-1]
+			aesEncrypter := aesencryptor.New(session.Key)
+			data, err := aesEncrypter.Decrypt(encryptedPacket.Packet)
+			if err == nil {
+				encrypted = true
+				session.LastTimeUsed = time.Now()
+				hyperlinkPackage := &webcrawler.HyperlinkPackage{}
+				err = protobuf.Decode(data, hyperlinkPackage)
+				if err != nil {
+					log.Fatal("error decrypting crawler packet")
+				}
+				callBackChan <- hyperlinkPackage
+				break
+			}
 		}
-		callBackChan <- hyperlinkPackage
+		if !encrypted {
+			fmt.Println("failed to decrypt message, discarding..")
+			return
+		}
 	}()
 
 	return callBackChan

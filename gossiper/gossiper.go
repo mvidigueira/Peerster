@@ -3,12 +3,14 @@ package gossiper
 import (
 	"crypto/ecdsa"
 	"fmt"
-	"github.com/dedis/protobuf"
 	"log"
 	"math/rand"
 	"net"
 	"strconv"
+	"sync"
 	"time"
+
+	"github.com/dedis/protobuf"
 
 	"github.com/mvidigueira/Peerster/dht_util"
 
@@ -57,17 +59,23 @@ type Gossiper struct {
 
 	blockchainLedger *BlockchainLedger
 
-	dhtMyID              [dht_util.IDByteSize]byte
-	dhtChanMap           *dht.ChanMap
-	bucketTable          *bucketTable
-	dhtDb                *dht.Storage
-	dhtBootstrap         string
-	webCrawler           *webcrawler.Crawler
-	pRanker              *ranker
-	diffieHellmanMap     map[string](chan *dto.DiffieHellman)
-	activeDiffieHellmans map[string][]*DiffieHellmanSession
-	encryptDHTOperations bool
-	privateKey           *ecdsa.PrivateKey
+	dhtMyID                          [dht_util.IDByteSize]byte
+	dhtChanMap                       *dht.ChanMap
+	bucketTable                      *bucketTable
+	dhtDb                            *dht.Storage
+	dhtBootstrap                     string
+	webCrawler                       *webcrawler.Crawler
+	pRanker                          *ranker
+	diffieHellmanMapMutex            *sync.Mutex
+	diffieHellmanMap                 map[[dht_util.IDByteSize]byte][]*DiffieHellmanNegotiationSession
+	activeOutgoingDiffieHellmanMutex *sync.Mutex
+	activeOutgoingDiffieHellmans     map[[dht_util.IDByteSize]byte][]*DiffieHellmanSession
+	activeIngoingDiffieHellmanMutex  *sync.Mutex
+	activeIngoingDiffieHellmans      map[[dht_util.IDByteSize]byte][]*DiffieHellmanSession
+	negotiationMapMutex              *sync.Mutex
+	negotiationMap                   map[[dht_util.IDByteSize]byte]chan [dht_util.IDByteSize]byte
+	encryptDHTOperations             bool
+	privateKey                       *ecdsa.PrivateKey
 }
 
 //NewGossiper creates a new gossiper
@@ -120,12 +128,18 @@ func NewGossiper(address, name string, UIport string, peers []string, simple boo
 		dhtChanMap:   dht.NewChanMap(),
 		dhtBootstrap: dhtBootstrap,
 
-		webCrawler:           webcrawler.New(crawlLeader),
-		pRanker:              newRanker(),
-		diffieHellmanMap:     map[string](chan *dto.DiffieHellman){},
-		activeDiffieHellmans: map[string]([]*DiffieHellmanSession){},
-		encryptDHTOperations: encryptDHTOperations,
-		privateKey:           privateKey,
+		webCrawler:                       webcrawler.New(crawlLeader),
+		pRanker:                          newRanker(),
+		diffieHellmanMapMutex:            new(sync.Mutex),
+		diffieHellmanMap:                 map[[dht_util.IDByteSize]byte][]*DiffieHellmanNegotiationSession{},
+		activeOutgoingDiffieHellmanMutex: new(sync.Mutex),
+		activeOutgoingDiffieHellmans:     map[[dht_util.IDByteSize]byte]([]*DiffieHellmanSession){},
+		activeIngoingDiffieHellmanMutex:  new(sync.Mutex),
+		activeIngoingDiffieHellmans:      map[[dht_util.IDByteSize]byte]([]*DiffieHellmanSession){},
+		encryptDHTOperations:             encryptDHTOperations,
+		privateKey:                       privateKey,
+		negotiationMap:                   map[[dht_util.IDByteSize]byte](chan [dht_util.IDByteSize]byte){},
+		negotiationMapMutex:              new(sync.Mutex),
 	}
 
 	g.bucketTable = newBucketTable(g.dhtMyID, g)
@@ -192,9 +206,10 @@ func (g *Gossiper) Start() {
 	}
 
 	go g.webCrawlerListenerRoutine()
-	g.webCrawler.Start()
+	g.startCrawler()
 
 	g.receiveClientUDP(cUI, cUIPM, cFileShare, cFileDL, cFileSearch, cCliDHT)
+
 }
 
 //addToPeers - adds a peer (ip:port) to the list of known peers
@@ -384,15 +399,33 @@ func (g *Gossiper) receiveExternalUDP(cRumor, cStatus, cPrivate, cDataRequest, c
 				cDHT <- pap
 			}
 		case "hyperlinkmessage":
-			g.webCrawler.InChan <- &webcrawler.CrawlerPacket{
-				HyperlinkPackage: packet.HyperlinkMessage,
+			for _, link := range packet.HyperlinkMessage.Links {
+				err := g.dhtDb.UpdateCrawlQueue([]byte(link))
+				if err != nil {
+					log.Println("Error saving link")
+				}
+			}
+			if !g.webCrawler.IsCrawling {
+				g.webCrawler.OutChan <- &webcrawler.CrawlerPacket{
+					Done: &webcrawler.DoneCrawl{Delete: false},
+				}
 			}
 		case "encryptedhyperlinkmessage":
 			go func() {
 				ch := g.decryptHyperlinkPackage(pap.GetSenderAddress(), packet.EncryptedWebCrawlerPacket)
 				hyperlinkPackage := <-ch
-				g.webCrawler.InChan <- &webcrawler.CrawlerPacket{
-					HyperlinkPackage: hyperlinkPackage,
+				if hyperlinkPackage != nil {
+					for _, link := range hyperlinkPackage.Links {
+						err := g.dhtDb.UpdateCrawlQueue([]byte(link))
+						if err != nil {
+							log.Println("Error saving link")
+						}
+					}
+					if !g.webCrawler.IsCrawling {
+						g.webCrawler.OutChan <- &webcrawler.CrawlerPacket{
+							Done: &webcrawler.DoneCrawl{Delete: false},
+						}
+					}
 				}
 			}()
 

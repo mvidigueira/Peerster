@@ -12,6 +12,8 @@ type CrawlerPacket struct {
 	PageHash         *PageHashPackage
 	ResChan          chan bool
 	Sender           string
+	PastMapPackage   *PastMapPackage
+	Done             *DoneCrawl
 }
 
 type KeywordToURLMap struct {
@@ -27,6 +29,7 @@ type HyperlinkPackage struct {
 
 type EncryptedCrawlerPacket struct {
 	Packet []byte // Shall hold a CrawlerPacket
+	Origin [dht_util.IDByteSize]byte
 }
 
 type OutBoundLinksPackage struct {
@@ -51,4 +54,12 @@ type IndexPackage struct {
 type PageHashPackage struct {
 	Hash dht_util.TypeID
 	Type string
+}
+
+type PastMapPackage struct {
+	Content []byte
+}
+
+type DoneCrawl struct {
+	Delete bool
 }

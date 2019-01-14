@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/dedis/protobuf"
 	"log"
 	"net"
 	"net/http"
@@ -18,6 +17,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dedis/protobuf"
+
 	"github.com/gorilla/mux"
 
 	"github.com/mvidigueira/Peerster/dto"
@@ -28,7 +29,7 @@ import (
 var g *gossiper.Gossiper
 var uiport string
 
-const selfDir = "/go/src/github.com/mvidigueira/Peerster"
+const selfDir = "/gocode/src/github.com/mvidigueira/Peerster"
 
 func main() {
 	UIPort := flag.String("UIPort", "8080", "Port for the UI client (default \"8080\")")
@@ -94,7 +95,7 @@ func main() {
 		searchRouter.Path("/search").Queries("query", "{query}").Methods("GET").HandlerFunc(searchHandler)
 		srv := &http.Server{
 			Handler:      searchRouter,
-			Addr:         ":80",
+			Addr:         ":8080",
 			WriteTimeout: 10 * time.Second,
 			ReadTimeout:  10 * time.Second,
 		}
