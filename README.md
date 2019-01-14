@@ -63,13 +63,13 @@ The above query will return the URL of every crawled document in the DHT which c
 
 ### UI
 
-The web UI for the search functionality can be found on port 80 of localhost.
+The web UI for the search functionality can be found on port 80 of localhost. **Note:** the root folder of your GOPATH must be named **go** in order for the UI to work properly.
 
 ### Encryption
 
-Enable AES encryption for all dht store/lookup operation by providing the -encryptDHSOperations flag. The AES encryption keys will be negotiated automatically using Diffie-Hellman key exchange.
+Enable AES encryption for all dht store/lookup operation by providing the --encryptDHTOperations flag. The AES encryption keys will be negotiated automatically using Diffie-Hellman key exchange.
 
-`./Peerster -UIPort=4002 -gossipAddr=127.0.0.1:7002 -name=C -boot=127.0.0.1:7000 -encryptDHSOperations`
+`./Peerster -UIPort=4002 -gossipAddr=127.0.0.1:7002 -name=C -boot=127.0.0.1:7000 -encryptDHTOperations`
 
 
 
