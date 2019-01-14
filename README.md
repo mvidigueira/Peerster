@@ -30,7 +30,7 @@ The following code sets up a DHT network consiting of three nodes. Every network
 
 ### Setup crawling
 
-In order to limit the scope of this project, we have constrained our webcrawling to wikipedia articles. Our application has a hard coded entry point where crawling starts (/wiki/Sweden).  
+In order to limit the scope of this project, we have constrained our webcrawling to wikipedia articles. Our application has a hard coded entry point where crawling starts (/wiki/Outline_of_academic_disciplines).  
 
 We only want one node to parse the entry point and hence we give the flag `-crawlLeader` to one of the nodes in the network. All nodes starts listening for nodes to crawl by default but be passive until the receieve their first batch of URLs from the crawl leader which parses the root page.
 
