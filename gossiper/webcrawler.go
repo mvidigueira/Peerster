@@ -17,9 +17,6 @@ import (
 )
 
 func (g *Gossiper) startCrawler() {
-
-	fmt.Println("START CRAWL")
-
 	queue, ok := g.dhtDb.CrawlQueueHeadPointer()
 	if !ok {
 		log.Fatal("Queue index not found.")
@@ -35,7 +32,7 @@ func (g *Gossiper) initiateFreshCrawl() {
 	// Fresh start of crawl, initiate queue from start point if leader.
 	g.webCrawler.Start(map[string]bool{})
 	if g.webCrawler.Leader {
-		err := g.dhtDb.UpdateCrawlQueue([]byte("/wiki/Swedish_Empire"))
+		err := g.dhtDb.UpdateCrawlQueue([]byte("/wiki/Outline_of_academic_disciplines"))
 		if err != nil {
 			log.Fatal("Error saving root url.")
 		}
@@ -46,7 +43,6 @@ func (g *Gossiper) initiateFreshCrawl() {
 }
 
 func (g *Gossiper) initiateAndRestoreCrawl() {
-	fmt.Println("RESTORING CRAWL")
 	// Restore bloom filter
 	past := g.dhtDb.GetPast()
 
@@ -445,7 +441,6 @@ func (g *Gossiper) getKey(dest string, nodeID [dht_util.IDByteSize]byte) chan []
 			ch, f := g.negotiationMap[nodeID]
 			if !f {
 				fmt.Println("Negotiation new key.")
-
 				negotiationChannel := make(chan [dht_util.IDByteSize]byte)
 				g.negotiationMap[nodeID] = negotiationChannel
 				g.negotiationMapMutex.Unlock()

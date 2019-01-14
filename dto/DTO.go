@@ -922,6 +922,7 @@ func SendGossipPacket(packet *GossipPacket, addr string, conn *net.UDPConn) {
 	conn.WriteToUDP(packetBytes, udpAddr)
 }
 
+// Message struct used for the diffie hellman key exchange.
 type DiffieHellman struct {
 	Origin          string
 	Destination     string
@@ -929,7 +930,6 @@ type DiffieHellman struct {
 	P               string
 	G               string
 	DiffiePublicKey []byte
-	EcdsaPublicKey  []byte
 	R               []byte
 	S               []byte
 	ExpirationDate  time.Time

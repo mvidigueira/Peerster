@@ -22,8 +22,8 @@ import (
 )
 
 type Crawler struct {
-	mux  *sync.Mutex
-	mux1 *sync.Mutex
+	mux       *sync.Mutex
+	pastMutex *sync.Mutex
 
 	crawlQueue []string
 	domain     string
@@ -42,7 +42,7 @@ func New(leader bool) *Crawler {
 	return &Crawler{
 		crawlQueue: []string{},
 		mux:        &sync.Mutex{},
-		mux1:       &sync.Mutex{},
+		pastMutex:  &sync.Mutex{},
 		domain:     "http://en.wikipedia.org",
 		InChan:     make(chan *CrawlerPacket),
 		OutChan:    make(chan *CrawlerPacket),
@@ -129,9 +129,9 @@ func (wc *Crawler) crawl() {
 				for _, hyperlink := range page.Hyperlinks {
 					if !wc.Crawled(hyperlink) {
 						filteredHyperLinks = append(filteredHyperLinks, hyperlink)
-						wc.mux1.Lock()
+						wc.pastMutex.Lock()
 						wc.past[hyperlink] = true
-						wc.mux1.Unlock()
+						wc.pastMutex.Unlock()
 					}
 				}
 
@@ -364,8 +364,8 @@ func (wc *Crawler) updateQueue(hyperlinks []string) {
 }
 
 func (wc *Crawler) Crawled(url string) bool {
-	wc.mux1.Lock()
-	defer wc.mux1.Unlock()
+	wc.pastMutex.Lock()
+	defer wc.pastMutex.Unlock()
 	_, f := wc.past[url]
 	return f
 }

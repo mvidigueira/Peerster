@@ -18,16 +18,6 @@ import (
 	"github.com/mvidigueira/Peerster/dto"
 )
 
-type DiffieHellmanSession struct {
-	Key            []byte
-	LastTimeUsed   time.Time
-	ExpirationDate time.Time
-}
-
-func (ds *DiffieHellmanSession) expired() bool {
-	return time.Now().After(ds.ExpirationDate)
-}
-
 func NewDiffieHellmanSession(key []byte, ExpirationDate time.Time) *DiffieHellmanSession {
 	return &DiffieHellmanSession{
 		Key:            key,
@@ -40,6 +30,16 @@ type DiffieHellmanNegotiationSession struct {
 	ID [dht_util.IDByteSize]byte
 }
 
+type DiffieHellmanSession struct {
+	Key            []byte
+	LastTimeUsed   time.Time
+	ExpirationDate time.Time
+}
+
+func (ds *DiffieHellmanSession) expired() bool {
+	return time.Now().After(ds.ExpirationDate)
+}
+
 func (g *Gossiper) CleanOldDiffieHellmanSessionsRoutine() {
 	for {
 		select {
@@ -49,10 +49,9 @@ func (g *Gossiper) CleanOldDiffieHellmanSessionsRoutine() {
 				tmp := []*DiffieHellmanSession{}
 				for _, session := range sessions {
 					if session.expired() && time.Now().After(session.LastTimeUsed.Add(time.Second*30)) {
-						//delete(g.activeOutgoingDiffieHellmans, key)
-					} else {
-						tmp = append(tmp, session)
+						continue
 					}
+					tmp = append(tmp, session)
 				}
 				g.activeOutgoingDiffieHellmans[key] = tmp
 			}
@@ -63,10 +62,9 @@ func (g *Gossiper) CleanOldDiffieHellmanSessionsRoutine() {
 				tmp := []*DiffieHellmanSession{}
 				for _, session := range sessions {
 					if session.expired() && time.Now().After(session.LastTimeUsed.Add(time.Second*30)) {
-						//delete(g.activeIngoingDiffieHellmans, key)
-					} else {
-						tmp = append(tmp, session)
+						continue
 					}
+					tmp = append(tmp, session)
 				}
 				g.activeIngoingDiffieHellmans[key] = tmp
 
@@ -114,6 +112,7 @@ func (g *Gossiper) negotiateDiffieHellmanInitiator(dest string, nodeID [dht_util
 
 	go func() {
 
+		// Create random id which will serve as an identifier for this diffie hellman session
 		token := make([]byte, dht_util.IDByteSize)
 		rand.Read(token)
 		var token64 [dht_util.IDByteSize]byte
@@ -138,7 +137,6 @@ func (g *Gossiper) negotiateDiffieHellmanInitiator(dest string, nodeID [dht_util
 			P:               fmt.Sprintf("%x", diffiehellman.P()),
 			G:               fmt.Sprintf("%x", diffiehellman.Group()),
 			DiffiePublicKey: diffiePublicKey,
-			EcdsaPublicKey:  g.dhtMyID[:],
 			NodeID:          g.dhtMyID,
 			Init:            true,
 			ID:              token64,
@@ -164,12 +162,14 @@ func (g *Gossiper) negotiateDiffieHellmanInitiator(dest string, nodeID [dht_util
 			return
 		}
 
-		ok := g.verifyPublicKey(reply.EcdsaPublicKey, dest)
+		ok := g.verifyPublicKey(reply.NodeID[:], dest)
 		if !ok {
 			fmt.Println("Failed to verify public key.")
 			callBackChannel <- nil
 			return
 		}
+
+		//Verify signature
 		ok = g.verifySignature(reply)
 		if !ok {
 			fmt.Println("Message signature not ok. Aborting diffie-hellman key exchange.3")
@@ -188,6 +188,7 @@ func (g *Gossiper) negotiateDiffieHellmanInitiator(dest string, nodeID [dht_util
 			return
 		}
 
+		// Create symmetric key
 		symmetricKey := diffieHellman.GenerateSymmetricKey(reply.DiffiePublicKey)
 
 		g.activeOutgoingDiffieHellmanMutex.Lock()
@@ -237,7 +238,6 @@ func (g *Gossiper) negotiateDiffieHellman(dest string, nodeID [dht_util.IDByteSi
 		P:               packet.P,
 		G:               packet.G,
 		DiffiePublicKey: diffiePublicKey,
-		EcdsaPublicKey:  g.dhtMyID[:],
 		NodeID:          g.dhtMyID,
 		Init:            false,
 		ID:              packet.ID,
@@ -247,6 +247,8 @@ func (g *Gossiper) negotiateDiffieHellman(dest string, nodeID [dht_util.IDByteSi
 		fmt.Errorf("could not sign request: %v", err)
 		return
 	}
+
+	// Attach signature
 	diffiePacket.S = s
 	diffiePacket.R = r
 
@@ -273,6 +275,7 @@ func (g *Gossiper) negotiateDiffieHellman(dest string, nodeID [dht_util.IDByteSi
 	fmt.Printf("Key setup with %s\n", dest)
 }
 
+// Sign a diffiehellman package
 func (g *Gossiper) signPacket(packet *dto.DiffieHellman) ([]byte, []byte, error) {
 	bytes, err := protobuf.Encode(packet)
 	if err != nil {
@@ -287,6 +290,7 @@ func (g *Gossiper) signPacket(packet *dto.DiffieHellman) ([]byte, []byte, error)
 	return r.Bytes(), s.Bytes(), err
 }
 
+// Verifies a diffiehellman package
 func (g *Gossiper) verifySignature(packet *dto.DiffieHellman) bool {
 
 	// R and S is not part of the message which should be hashed.
@@ -330,11 +334,11 @@ func (g *Gossiper) verifyPublicKey(key []byte, sender string) bool {
 // Send acknowledgement package
 func (g *Gossiper) diffieAcklowledge(dest string, id [dht_util.IDByteSize]byte) *dto.DiffieHellman {
 	ack := &dto.DiffieHellman{
-		EcdsaPublicKey: g.dhtMyID[:],
 		NodeID:         g.dhtMyID,
 		Init:           false,
 		ID:             id,
 		ExpirationDate: time.Now().Local().Add(time.Second * time.Duration(60))}
+	// Sign package
 	r, s, err := g.signPacket(ack)
 	if err != nil {
 		log.Fatal("could not sign request")
@@ -351,7 +355,7 @@ func (g *Gossiper) diffieAcklowledge(dest string, id [dht_util.IDByteSize]byte) 
 func (g *Gossiper) waitForAcknowledge(dest string, nodeID [dht_util.IDByteSize]byte, responseChan chan *dto.DiffieHellman) (bool, *dto.DiffieHellman) {
 	select {
 	case res := <-responseChan:
-		ok := g.verifyPublicKey(res.EcdsaPublicKey, dest)
+		ok := g.verifyPublicKey(res.NodeID[:], dest)
 		if !ok {
 			fmt.Println("Failed to verify public key.")
 			return false, nil
@@ -370,8 +374,8 @@ func (g *Gossiper) waitForAcknowledge(dest string, nodeID [dht_util.IDByteSize]b
 
 func (g *Gossiper) extractEcdsaPublicKeyComponents(packet *dto.DiffieHellman) (*big.Int, *big.Int) {
 	x := new(big.Int)
-	x.SetBytes(packet.EcdsaPublicKey[:32])
+	x.SetBytes(packet.NodeID[:32])
 	y := new(big.Int)
-	y.SetBytes(packet.EcdsaPublicKey[32:])
+	y.SetBytes(packet.NodeID[32:])
 	return x, y
 }

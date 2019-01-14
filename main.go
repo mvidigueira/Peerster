@@ -29,7 +29,7 @@ import (
 var g *gossiper.Gossiper
 var uiport string
 
-const selfDir = "/gocode/src/github.com/mvidigueira/Peerster"
+const selfDir = "/go/src/github.com/mvidigueira/Peerster"
 
 func main() {
 	UIPort := flag.String("UIPort", "8080", "Port for the UI client (default \"8080\")")
