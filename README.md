@@ -13,6 +13,7 @@ Couse Project - Decentralized Systems Engineering 18 (EPFL)
 5. Porterstemmer (stemming library) github.com/reiver/go-porterstemmer
 6. BoltDB (Persistent key-value store) github.com/etcd-io/bbolt
 7. Gcache (LRU cache) github.com/bluele/gcache
+8. HyperLogLog github.com/axiomhq/hyperloglog
 
 All of the above dependencies are go gettable.
 
