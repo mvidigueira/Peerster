@@ -325,7 +325,7 @@ func (g *Gossiper) diffieAcklowledge(dest string, id [dht_util.IDByteSize]byte) 
 		NodeID:         g.dhtMyID,
 		Init:           false,
 		ID:             id,
-		ExpirationDate: time.Now().Local().Add(time.Second * time.Duration(5))}
+		ExpirationDate: time.Now().Local().Add(time.Second * time.Duration(100))}
 	r, s, err := g.signPacket(ack)
 	if err != nil {
 		log.Fatal("could not sign request")
