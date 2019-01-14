@@ -12,7 +12,8 @@ Couse Project - Decentralized Systems Engineering 18 (EPFL)
 4. Stopwords - github.com/bbalet/stopwords
 5. Porterstemmer (stemming library) github.com/reiver/go-porterstemmer
 6. BoltDB (Persistent key-value store) github.com/etcd-io/bbolt
-7. Gcache (LRU cache) https://github.com/bluele/gcache
+7. Gcache (LRU cache) github.com/bluele/gcache
+8. HyperLogLog github.com/axiomhq/hyperloglog
 
 All of the above dependencies are go gettable.
 
@@ -72,4 +73,5 @@ Enable AES encryption for all dht store/lookup operation by providing the --encr
 `./Peerster -UIPort=4002 -gossipAddr=127.0.0.1:7002 -name=C -boot=127.0.0.1:7000 -encryptDHTOperations`
 
 
+![Demo](https://raw.githubusercontent.com/mvidigueira/Peerster/master/demo.gif)
 
