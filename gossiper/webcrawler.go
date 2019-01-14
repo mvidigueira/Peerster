@@ -427,13 +427,17 @@ func (g *Gossiper) getKey(dest string, nodeID [dht_util.IDByteSize]byte) chan []
 
 		// Check if all current sessions are expired
 		var allSessionsExpired = true
-		for _, session := range diffieSessions {
+		var indexNonExpired = -1
+		for index, session := range diffieSessions {
 			allSessionsExpired = session.expired()
+			if !session.expired() {
+				indexNonExpired = index
+			}
 		}
 
 		if f && len(diffieSessions) > 0 && !allSessionsExpired {
 			// We have a valid session
-			resChan <- diffieSessions[len(diffieSessions)-1].Key
+			resChan <- diffieSessions[indexNonExpired].Key
 		} else {
 			// We need to negotiate new session
 			g.negotiationMapMutex.Lock()
@@ -459,7 +463,7 @@ func (g *Gossiper) getKey(dest string, nodeID [dht_util.IDByteSize]byte) chan []
 					g.negotiationMapMutex.Lock()
 					delete(g.negotiationMap, nodeID)
 					g.negotiationMapMutex.Unlock()
-				case <-time.After(time.Second * 5):
+				case <-time.After(time.Second * 30):
 					g.negotiationMapMutex.Lock()
 					delete(g.negotiationMap, nodeID)
 					g.negotiationMapMutex.Unlock()

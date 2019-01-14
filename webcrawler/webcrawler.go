@@ -72,7 +72,7 @@ func (wc *Crawler) crawl() {
 		for {
 			select {
 			case nextPage := <-wc.NextCrawl:
-				time.Sleep(time.Second * 1)
+				time.Sleep(time.Millisecond * 1000)
 
 				wc.IsCrawling = true
 

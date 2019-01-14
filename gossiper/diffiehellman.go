@@ -45,22 +45,31 @@ func (g *Gossiper) CleanOldDiffieHellmanSessionsRoutine() {
 		select {
 		case <-time.After(time.Second * 5):
 			g.activeOutgoingDiffieHellmanMutex.Lock()
-			for key, v := range g.activeOutgoingDiffieHellmans {
-				for _, session := range v {
-					if session.expired() && time.Now().After(session.LastTimeUsed.Add(time.Second*60)) {
-						delete(g.activeOutgoingDiffieHellmans, key)
+			for key, sessions := range g.activeOutgoingDiffieHellmans {
+				tmp := []*DiffieHellmanSession{}
+				for _, session := range sessions {
+					if session.expired() && time.Now().After(session.LastTimeUsed.Add(time.Second*30)) {
+						//delete(g.activeOutgoingDiffieHellmans, key)
+					} else {
+						tmp = append(tmp, session)
 					}
 				}
+				g.activeOutgoingDiffieHellmans[key] = tmp
 			}
 			g.activeOutgoingDiffieHellmanMutex.Unlock()
 
 			g.activeIngoingDiffieHellmanMutex.Lock()
-			for key, v := range g.activeIngoingDiffieHellmans {
-				for _, session := range v {
-					if session.expired() && time.Now().After(session.LastTimeUsed.Add(time.Second*5)) {
-						delete(g.activeOutgoingDiffieHellmans, key)
+			for key, sessions := range g.activeIngoingDiffieHellmans {
+				tmp := []*DiffieHellmanSession{}
+				for _, session := range sessions {
+					if session.expired() && time.Now().After(session.LastTimeUsed.Add(time.Second*30)) {
+						//delete(g.activeIngoingDiffieHellmans, key)
+					} else {
+						tmp = append(tmp, session)
 					}
 				}
+				g.activeIngoingDiffieHellmans[key] = tmp
+
 			}
 			g.activeIngoingDiffieHellmanMutex.Unlock()
 		}
@@ -325,7 +334,7 @@ func (g *Gossiper) diffieAcklowledge(dest string, id [dht_util.IDByteSize]byte) 
 		NodeID:         g.dhtMyID,
 		Init:           false,
 		ID:             id,
-		ExpirationDate: time.Now().Local().Add(time.Second * time.Duration(100))}
+		ExpirationDate: time.Now().Local().Add(time.Second * time.Duration(60))}
 	r, s, err := g.signPacket(ack)
 	if err != nil {
 		log.Fatal("could not sign request")
