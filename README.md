@@ -1,6 +1,6 @@
 # Decentralized Search
 
-Couse Project - Decentralized Systems Engineering 18 (EPFL)
+Course Project - Decentralized Systems Engineering 18 (EPFL)
 
 # Run
 
